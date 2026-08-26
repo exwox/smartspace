@@ -14,6 +14,14 @@ interface MapCanvasProps {
   onRoomsChange?: (rooms: Room[]) => void;
   highlight?: string | null;
   activeFloorName?: string | null;
+  /** Mode menggambar: klik-tarik di denah untuk membuat ruangan rectangle */
+  drawMode?: boolean;
+  onDrawRectangle?: (rect: { x: number; y: number; width: number; height: number }) => void;
+  /** Ruangan draft lokal (belum tersimpan di server), digambar dengan gaya putus-putus */
+  draftRooms?: Room[];
+  selectedDraftId?: string | null;
+  onSelectDraft?: (room: Room | null) => void;
+  onDraftsChange?: (drafts: Room[]) => void;
 }
 
 const STATUS_FILL: Record<RoomStatus, string> = {
@@ -66,6 +74,12 @@ export default function MapCanvas({
   onRoomsChange,
   highlight = null,
   activeFloorName = null,
+  drawMode = false,
+  onDrawRectangle,
+  draftRooms,
+  selectedDraftId = null,
+  onSelectDraft,
+  onDraftsChange,
 }: MapCanvasProps) {
   const stageRef = useRef<Konva.Stage>(null);
   const mapRootRef = useRef<HTMLDivElement>(null);
@@ -96,6 +110,12 @@ export default function MapCanvas({
     if (!activeFloorName) return rooms;
     return rooms.filter((room) => room.floor === activeFloorName);
   }, [rooms, activeFloorName]);
+
+  const visibleDrafts = useMemo(() => {
+    const drafts = draftRooms ?? [];
+    if (!activeFloorName) return drafts;
+    return drafts.filter((room) => room.floor === activeFloorName);
+  }, [draftRooms, activeFloorName]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -128,6 +148,7 @@ export default function MapCanvas({
   const fitToContent = useCallback(() => {
     const pts: number[] = [];
     visibleRooms.forEach((r) => pts.push(...r.geometry.points));
+    visibleDrafts.forEach((r) => pts.push(...r.geometry.points));
     activeFloor?.linework?.forEach((path) => pts.push(...path.points));
     activeFloor?.texts?.forEach((label) => pts.push(label.x, label.y));
     if (activeFloor) pts.push(0, 0, activeFloor.width, 0, activeFloor.width, activeFloor.height, 0, activeFloor.height);
@@ -156,7 +177,7 @@ export default function MapCanvas({
       x: size.w / 2 - ((minX + maxX) / 2) * fittedScale,
       y: size.h / 2 - ((minY + maxY) / 2) * fittedScale,
     });
-  }, [activeFloor, size.h, size.w, visibleRooms]);
+  }, [activeFloor, size.h, size.w, visibleRooms, visibleDrafts]);
 
   useEffect(() => {
     const t = setTimeout(fitToContent, 50);
@@ -187,6 +208,61 @@ export default function MapCanvas({
   const dragRef = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
 
+  // ---------- Mode menggambar rectangle ----------
+  const drawStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [drawRect, setDrawRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+
+  /** Titik pointer dikonversi ke koordinat denah (stage). */
+  const getStagePoint = () => {
+    const st = stageRef.current;
+    if (!st) return null;
+    const p = st.getPointerPosition();
+    if (!p) return null;
+    const s = st.scaleX() || 1;
+    return { x: (p.x - st.x()) / s, y: (p.y - st.y()) / s };
+  };
+
+  const handleDrawStart = () => {
+    if (!drawMode || !onDrawRectangle) return;
+    const pt = getStagePoint();
+    if (!pt) return;
+    drawStartRef.current = pt;
+    setDrawRect({ x: pt.x, y: pt.y, width: 0, height: 0 });
+  };
+
+  const handleDrawMove = () => {
+    if (!drawMode || !drawStartRef.current) return;
+    const start = drawStartRef.current;
+    const pt = getStagePoint();
+    if (!pt) return;
+    setDrawRect({
+      x: Math.min(start.x, pt.x),
+      y: Math.min(start.y, pt.y),
+      width: Math.abs(pt.x - start.x),
+      height: Math.abs(pt.y - start.y),
+    });
+  };
+
+  const handleDrawEnd = () => {
+    if (!drawMode || !drawStartRef.current) return;
+    const start = drawStartRef.current;
+    drawStartRef.current = null;
+    const pt = getStagePoint();
+    setDrawRect(null);
+    if (!pt || !onDrawRectangle) return;
+    const width = Math.abs(pt.x - start.x);
+    const height = Math.abs(pt.y - start.y);
+    // Abaikan hasil yang terlalu kecil (kemungkinan hanya klik tanpa tarikan)
+    if (width < 4 || height < 4) return;
+    onDrawRectangle({
+      x: Math.min(start.x, pt.x),
+      y: Math.min(start.y, pt.y),
+      width,
+      height,
+    });
+  };
+  // -----------------------------------------------
+
   const handlePanMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (!interactive || editor) return;
     const st = stageRef.current;
@@ -214,8 +290,11 @@ export default function MapCanvas({
     setScale(newScale);
   };
 
-  const handleRoomDragged = (room: Room, e: Konva.KonvaEventObject<DragEvent>) => {
-    if (!onRoomsChange) return;
+  const handleShapeDragged = (
+    room: Room,
+    isDraft: boolean,
+    e: Konva.KonvaEventObject<DragEvent>,
+  ) => {
     const node = e.target as Konva.Group;
     const dx = node.x() ?? 0;
     const dy = node.y() ?? 0;
@@ -224,24 +303,34 @@ export default function MapCanvas({
       pts[i] += dx;
       pts[i + 1] += dy;
     }
-    const next = rooms.map((r) =>
-      r.room_id === room.room_id ? { ...r, geometry: { ...r.geometry, points: pts } } : r,
-    );
-    onRoomsChange(next);
+    if (isDraft) {
+      if (!onDraftsChange) return;
+      onDraftsChange((draftRooms ?? []).map((r) =>
+        r.room_id === room.room_id ? { ...r, geometry: { ...r.geometry, points: pts } } : r,
+      ));
+    } else {
+      if (!onRoomsChange) return;
+      onRoomsChange(rooms.map((r) =>
+        r.room_id === room.room_id ? { ...r, geometry: { ...r.geometry, points: pts } } : r,
+      ));
+    }
     node.position({ x: 0, y: 0 });
     node.getLayer()?.batchDraw();
   };
 
-  const renderRoomShape = (room: Room) => {
+  const renderRoomShape = (room: Room, isDraft = false) => {
     const b = roomBounds(room.geometry.points);
     const roomWidth = Math.max(0, b.maxX - b.minX);
     const roomHeight = Math.max(0, b.maxY - b.minY);
-    const selected = selectedRoomId === room.room_id;
+    const selected = isDraft
+      ? selectedDraftId === room.room_id
+      : selectedRoomId === room.room_id;
     const hl = highlight === room.room_id;
     const effectiveStatus = displayStatus(room);
-    const fill = STATUS_FILL[effectiveStatus] ?? '#dcfce7';
+    const fill = isDraft ? '#dbeafe' : STATUS_FILL[effectiveStatus] ?? '#dcfce7';
+    const strokeColor = isDraft ? (selected ? '#1d4ed8' : '#0284c7') : hl || selected ? '#2563eb' : '#475569';
     const isRect = room.geometry.type === 'rectangle';
-    const statusText = STATUS_LABEL[effectiveStatus];
+    const statusText = isDraft ? 'Draft Baru' : STATUS_LABEL[effectiveStatus];
     // Ukuran teks mengikuti ruang yang tersedia, bukan angka font tetap.
     // Batas maksimum menjaga label tetap kecil pada denah berukuran besar.
     const codeFontSize = Math.max(1.5, Math.min(
@@ -260,28 +349,35 @@ export default function MapCanvas({
     return (
       <Group
         key={room.room_id}
-        draggable={editor && !!onRoomsChange}
-        onDragEnd={(e) => handleRoomDragged(room, e)}
+        draggable={editor && !drawMode && (isDraft ? !!onDraftsChange : !!onRoomsChange)}
+        onDragEnd={(e) => handleShapeDragged(room, isDraft, e)}
         onClick={(e) => {
           if (!editor && interactive) {
             e.cancelBubble = true;
             onSelect(selected ? null : room);
+          } else if (isDraft && onSelectDraft) {
+            e.cancelBubble = true;
+            onSelectDraft(selected ? null : room);
           }
         }}
         onTap={(e) => {
           if (!editor && interactive) {
             e.cancelBubble = true;
             onSelect(selected ? null : room);
+          } else if (isDraft && onSelectDraft) {
+            e.cancelBubble = true;
+            onSelectDraft(selected ? null : room);
           }
         }}
       >
         {isRect ? (
           <Rect x={b.minX} y={b.minY} width={b.maxX - b.minX} height={b.maxY - b.minY} fill={fill}
-            stroke={hl || selected ? '#2563eb' : '#475569'} strokeWidth={selected || hl ? 3 : 1.5}
+            stroke={strokeColor} strokeWidth={selected || hl ? 3 : 1.5} dash={isDraft ? [6, 4] : undefined}
             shadowColor={hl ? '#2563eb' : undefined} shadowBlur={hl ? 12 : 0} cornerRadius={2} opacity={0.82} />
         ) : (
-          <Line points={room.geometry.points} closed fill={fill} stroke={hl || selected ? '#2563eb' : '#475569'}
-            strokeWidth={selected || hl ? 3 : 1.5} shadowColor={hl ? '#2563eb' : undefined} shadowBlur={hl ? 12 : 0}
+          <Line points={room.geometry.points} closed fill={fill} stroke={strokeColor}
+            strokeWidth={selected || hl ? 3 : 1.5} dash={isDraft ? [6, 4] : undefined}
+            shadowColor={hl ? '#2563eb' : undefined} shadowBlur={hl ? 12 : 0}
             lineJoin="round" opacity={0.82} />
         )}
         <Group listening={false}>
@@ -298,12 +394,22 @@ export default function MapCanvas({
 
   return (
     <div ref={mapRootRef} className="relative h-full w-full overflow-hidden bg-slate-100 fullscreen:bg-slate-100">
-      <div ref={containerRef} className="map-container h-full w-full">
+      <div ref={containerRef} className="map-container h-full w-full" style={{ cursor: drawMode ? 'crosshair' : undefined }}>
         <Stage ref={stageRef} width={size.w} height={size.h} scaleX={scale} scaleY={scale} x={pos.x} y={pos.y}
-          onMouseDown={handlePanMove} onMouseMove={(e) => dragRef.current && handlePanMove(e)}
-          onMouseUp={() => (dragRef.current = false)} onMouseLeave={() => (dragRef.current = false)}
-          onTouchStart={handlePanMove} onTouchMove={(e) => dragRef.current && handlePanMove(e)}
-          onTouchEnd={() => (dragRef.current = false)} onWheel={handleWheel}>
+          onMouseDown={(e) => { handleDrawStart(); handlePanMove(e); }}
+          onMouseMove={(e) => { handleDrawMove(); if (dragRef.current) handlePanMove(e); }}
+          onMouseUp={() => { handleDrawEnd(); dragRef.current = false; }}
+          onMouseLeave={() => {
+            dragRef.current = false;
+            if (drawStartRef.current) {
+              drawStartRef.current = null;
+              setDrawRect(null);
+            }
+          }}
+          onTouchStart={(e) => { handleDrawStart(); handlePanMove(e); }}
+          onTouchMove={(e) => { handleDrawMove(); if (dragRef.current) handlePanMove(e); }}
+          onTouchEnd={() => { handleDrawEnd(); dragRef.current = false; }}
+          onWheel={handleWheel}>
           <Layer>
             {activeFloor && (
               <Group listening={false}>
@@ -326,7 +432,21 @@ export default function MapCanvas({
                 <Text x={14} y={12} text={activeFloor.floor} fontSize={16} fontStyle="bold" fill="#64748b" />
               </Group>
             )}
-            {visibleRooms.map(renderRoomShape)}
+            {visibleRooms.map((room) => renderRoomShape(room))}
+            {visibleDrafts.map((draft) => renderRoomShape(draft, true))}
+            {drawRect && (
+              <Rect
+                x={drawRect.x}
+                y={drawRect.y}
+                width={Math.max(1, drawRect.width)}
+                height={Math.max(1, drawRect.height)}
+                fill="rgba(37,99,235,0.14)"
+                stroke="#2563eb"
+                strokeWidth={1.5}
+                dash={[6, 4]}
+                listening={false}
+              />
+            )}
             {activeFloor?.texts?.map((label, index) => (
               <Text
                 key={`${label.entity}-${index}-${label.text}`}
@@ -353,6 +473,12 @@ export default function MapCanvas({
           <button onClick={() => zoom(0.8)} className="h-8 w-8 rounded text-lg text-slate-700 hover:bg-slate-100">−</button>
           <button onClick={fitToContent} title="Paskan denah ke layar" className="h-8 w-8 rounded text-xs font-bold text-slate-700 hover:bg-slate-100">⌗</button>
           <button onClick={toggleFullscreen} title={isFullscreen ? 'Keluar layar penuh' : 'Layar penuh'} className="h-8 w-8 rounded text-sm font-bold text-slate-700 hover:bg-slate-100">{isFullscreen ? '↙' : '⛶'}</button>
+        </div>
+      )}
+
+      {drawMode && (
+        <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full bg-blue-600/90 px-3.5 py-1.5 text-[11px] font-semibold text-white shadow-lg">
+          ✏️ Mode gambar aktif — klik &amp; tarik di denah untuk membuat ruangan rectangle
         </div>
       )}
 

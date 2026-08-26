@@ -6,13 +6,21 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import multer from 'multer';
 import { loginHandler, requireAdmin } from './auth.js';
-import { DEFAULT_PUBLIC_CONTENT, loadDB, nextId, nextTicket, now, persist, values } from './db.js';
+import { DEFAULT_NOTIFICATION_SETTINGS, DEFAULT_PUBLIC_CONTENT, loadDB, nextId, nextTicket, now, persist, values } from './db.js';
 import { parseDXF, polygonArea } from './dxf.js';
+import {
+  newTicketAdminMail,
+  parseRecipients,
+  sendMail,
+  smtpSummary,
+  ticketStatusMail,
+} from './mailer.js';
 import type {
   Attachment,
   DBShape,
   FloorPlan,
   Lease,
+  NotificationSettings,
   RentalRequest,
   Room,
   RoomStatus,
@@ -204,6 +212,48 @@ app.get('/api/public-content', (_req: Request, res: Response) => {
 });
 
 // ------------------------------------------------------------------
+// Notifikasi email tiket (SMTP dikonfigurasi via environment variable)
+// ------------------------------------------------------------------
+function getNotificationSettings(d: DBShape): NotificationSettings {
+  return { ...DEFAULT_NOTIFICATION_SETTINGS, ...(d.notifications ?? {}) };
+}
+
+/** Notifikasi tiket baru ke email admin + konfirmasi ke pengaju (fire-and-forget). */
+function notifyNewTicket(d: DBShape, request: RentalRequest): void {
+  try {
+    const settings = getNotificationSettings(d);
+    if (!settings.enabled) return;
+    const room = d.rooms[request.room_id] ?? null;
+    const admins = parseRecipients(settings.recipients);
+    if (admins.length > 0) {
+      const adminMail = newTicketAdminMail(request, room);
+      void sendMail({ ...adminMail, to: admins });
+    }
+    if (settings.notify_applicant && request.contact_email) {
+      void sendMail(ticketStatusMail(request, room, 'pending'));
+    }
+  } catch (e: any) {
+    console.error(`[smart-space][mail] Gagal menyiapkan notifikasi tiket: ${e?.message ?? e}`);
+  }
+}
+
+/** Email hasil review (disetujui/ditolak) ke pengaju (fire-and-forget). */
+function notifyTicketReviewed(
+  d: DBShape,
+  request: RentalRequest,
+  status: 'approved' | 'rejected',
+): void {
+  try {
+    const settings = getNotificationSettings(d);
+    if (!settings.enabled || !settings.notify_applicant || !request.contact_email) return;
+    const room = d.rooms[request.room_id] ?? null;
+    void sendMail(ticketStatusMail(request, room, status));
+  } catch (e: any) {
+    console.error(`[smart-space][mail] Gagal menyiapkan notifikasi review: ${e?.message ?? e}`);
+  }
+}
+
+// ------------------------------------------------------------------
 // PUBLIK: pengajuan sewa (tidak perlu login per Section 11 plan.md)
 // ------------------------------------------------------------------
 app.post('/api/requests', upload.array('attachments', 5), (req, res) => {
@@ -246,6 +296,9 @@ app.post('/api/requests', upload.array('attachments', 5), (req, res) => {
   // Multi-tiket: status ruangan TIDAK diubah saat pengajuan masuk.
   // Ruangan menjadi 'terisi' hanya setelah admin menyetujui salah satu tiket.
   persist();
+
+  // Kirim notifikasi email tiket baru bila diaktifkan (tidak memblokir response)
+  notifyNewTicket(d, request);
 
   res.status(201).json({
     request,
@@ -290,6 +343,50 @@ app.put('/api/admin/public-content', (req: Request, res: Response) => {
   d.publicContent = next;
   persist();
   res.json({ settings: next, message: 'Konten dashboard publik berhasil diperbarui' });
+});
+
+// ---------- Pengaturan notifikasi email tiket ----------
+app.get('/api/admin/notification-settings', (_req: Request, res: Response) => {
+  const d = loadDB();
+  res.json({ settings: getNotificationSettings(d), smtp: smtpSummary() });
+});
+
+app.put('/api/admin/notification-settings', (req: Request, res: Response) => {
+  const d = loadDB();
+  const current = getNotificationSettings(d);
+  const next: NotificationSettings = {
+    enabled: typeof req.body?.enabled === 'boolean' ? req.body.enabled : current.enabled,
+    recipients:
+      typeof req.body?.recipients === 'string'
+        ? parseRecipients(req.body.recipients).join(', ')
+        : current.recipients,
+    notify_applicant:
+      typeof req.body?.notify_applicant === 'boolean'
+        ? req.body.notify_applicant
+        : current.notify_applicant,
+  };
+  d.notifications = next;
+  persist();
+  res.json({ settings: next, smtp: smtpSummary(), message: 'Pengaturan notifikasi tersimpan' });
+});
+
+// Kirim email tes untuk memverifikasi konfigurasi SMTP
+app.post('/api/admin/notification-settings/test', async (req: Request, res: Response) => {
+  const d = loadDB();
+  const settings = getNotificationSettings(d);
+  const override = typeof req.body?.email === 'string' ? parseRecipients(req.body.email) : [];
+  const to = override.length > 0 ? override : parseRecipients(settings.recipients);
+  if (to.length === 0) {
+    return res.status(400).json({ error: 'Isi alamat email tujuan terlebih dahulu' });
+  }
+  const result = await sendMail({
+    to,
+    subject: '[Smart Space] Tes notifikasi email',
+    text: 'Ini adalah email tes dari Smart Space. Bila Anda menerima email ini, konfigurasi SMTP sudah benar.',
+    html:
+      '<p>✅ Ini adalah <strong>email tes</strong> dari Smart Space. Bila Anda menerima email ini, konfigurasi SMTP sudah benar.</p>',
+  });
+  res.json(result);
 });
 
 const normalizeRoomInput = (body: any, roomId: string) => {
@@ -729,6 +826,7 @@ app.patch('/api/admin/requests/:id', (req, res) => {
   const action = String(req.body.action ?? '');
   // Counter tiket pending lain yang otomatis ditolak karena ruangan sudah dipilih untuk tiket tertentu
   let supersededTickets = 0;
+  const supersededRequests: RentalRequest[] = [];
 
   if (action === 'approve') {
     const room = d.rooms[request.room_id];
@@ -783,6 +881,7 @@ app.patch('/api/admin/requests/:id', (req, res) => {
         other.reviewed_by = (req as any).admin?.username ?? 'admin';
         other.reviewed_at = now();
         supersededTickets += 1;
+        supersededRequests.push(other);
       }
     }
   } else if (action === 'reject') {
@@ -796,6 +895,13 @@ app.patch('/api/admin/requests/:id', (req, res) => {
   request.reviewed_by = (req as any).admin?.username ?? 'admin';
   request.reviewed_at = now();
   persist();
+
+  // Notifikasi email hasil review ke pengaju (bila fitur diaktifkan)
+  notifyTicketReviewed(d, request, action === 'approve' ? 'approved' : 'rejected');
+  for (const sup of supersededRequests) {
+    notifyTicketReviewed(d, sup, 'rejected');
+  }
+
   res.json({ request, superseded_tickets: supersededTickets });
 });
 

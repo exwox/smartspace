@@ -5,6 +5,7 @@ const NAV = [
   { to: '/admin/rooms', label: 'Ruangan', icon: '🏢' },
   { to: '/admin/floor', label: 'Denah / DXF', icon: '🗺️' },
   { to: '/admin/requests', label: 'Pengajuan', icon: '📨' },
+  { to: '/admin/settings', label: 'Pengaturan', icon: '⚙️' },
 ];
 
 export default function AdminLayout() {

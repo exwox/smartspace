@@ -1,4 +1,12 @@
-import type { FloorPlan, PublicContentSettings, RentalRequest, Room, Stats } from './types.ts';
+import type {
+  FloorPlan,
+  NotificationSettings,
+  PublicContentSettings,
+  RentalRequest,
+  Room,
+  SmtpSummary,
+  Stats,
+} from './types.ts';
 
 const BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -194,4 +202,31 @@ export async function adminSavePublicContent(settings: PublicContentSettings) {
 export async function adminResetData() {
   const res = await fetch(`${BASE}/api/admin/reset`, { method: 'POST', headers: getAuthHeaders() });
   return handle<{ ok: boolean; message: string }>(res);
+}
+
+// ---------- PENGATURAN NOTIFIKASI EMAIL TIKET ----------
+export async function adminFetchNotificationSettings() {
+  const res = await fetch(`${BASE}/api/admin/notification-settings`, { headers: getAuthHeaders() });
+  return handle<{
+    settings: NotificationSettings;
+    smtp: SmtpSummary;
+  }>(res);
+}
+
+export async function adminSaveNotificationSettings(settings: NotificationSettings) {
+  const res = await fetch(`${BASE}/api/admin/notification-settings`, {
+    method: 'PUT',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+  return handle<{ settings: NotificationSettings; message: string }>(res);
+}
+
+export async function adminSendTestNotificationEmail(email: string) {
+  const res = await fetch(`${BASE}/api/admin/notification-settings/test`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  return handle<{ sent: boolean; error?: string }>(res);
 }

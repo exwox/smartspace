@@ -9,6 +9,7 @@ import AdminRoomsPage from './pages/admin/AdminRoomsPage.tsx';
 import AdminRequestsPage from './pages/admin/AdminRequestsPage.tsx';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage.tsx';
 import AdminFloorPage from './pages/admin/AdminFloorPage.tsx';
+import AdminSettingsPage from './pages/admin/AdminSettingsPage.tsx';
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="rooms" element={<AdminRoomsPage />} />
         <Route path="floor" element={<AdminFloorPage />} />
         <Route path="requests" element={<AdminRequestsPage />} />
+        <Route path="settings" element={<AdminSettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

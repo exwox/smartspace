@@ -194,3 +194,67 @@ export function formatDate(s: string | null | undefined): string {
   const d = new Date(s.length <= 10 ? s + 'T00:00:00' : s);
   return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 }
+
+// ---------- Notifikasi email tiket ----------
+export interface NotificationSettings {
+  /** Aktifkan pengiriman email saat ada tiket baru masuk. */
+  enabled: boolean;
+  /** Daftar email tujuan (admin), dipisah koma/titik koma/spasi. */
+  recipients: string;
+  /** Juga kirim email ke pengaju (konfirmasi tiket & hasil review). */
+  notify_applicant: boolean;
+}
+
+export interface SmtpSummary {
+  configured: boolean;
+  host?: string;
+  port?: string;
+  secure: boolean;
+}
+
+// ---------- Helper geometri ruangan ----------
+export interface Bounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/** Bounding box dari daftar titik polygon [x1,y1,x2,y2,...]. */
+export function boundsOf(points: number[]): Bounds {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < points.length; i += 2) {
+    minX = Math.min(minX, points[i]);
+    maxX = Math.max(maxX, points[i]);
+    minY = Math.min(minY, points[i + 1]);
+    maxY = Math.max(maxY, points[i + 1]);
+  }
+  if (!Number.isFinite(minX)) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  return { minX, minY, maxX, maxY };
+}
+
+/**
+ * Ubah ukuran rectangle dengan mempertahankan sudut kiri-atas.
+ * Menghasilkan titik [kiri-atas, kanan-atas, kanan-bawah, kiri-bawah].
+ * Ukuran minimal dibatasi 1 unit agar rectangle tidak hilang.
+ */
+export function resizedRectanglePoints(points: number[], panjang: number, lebar: number): number[] {
+  const b = boundsOf(points);
+  const w = Math.max(1, panjang);
+  const h = Math.max(1, lebar);
+  return [
+    b.minX,
+    b.minY,
+    b.minX + w,
+    b.minY,
+    b.minX + w,
+    b.minY + h,
+    b.minX,
+    b.minY + h,
+  ];
+}
+
+export const roundGeometry = (n: number): number => Math.round(n * 100) / 100;

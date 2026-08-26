@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import MapCanvas from './MapCanvas.tsx';
 import { adminSaveRoom, adminUploadRoomPhotos, fetchFloors } from '../api.ts';
 import type { Room, FloorPlan } from '../types.ts';
+import { resizedRectanglePoints } from '../types.ts';
 
 interface Props {
   room: Room | null;
@@ -36,6 +37,35 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
   const [previewRoom, setPreviewRoom] = useState<Room | null>(room);
   const [existingPhotos, setExistingPhotos] = useState<string[]>(room?.photos ?? []);
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
+
+  // Ukuran bisa diedit langsung (geometry rectangle): mengubah panjang/lebar me-resize geometri
+  const [sizePanjang, setSizePanjang] = useState(room ? String(room.size.panjang) : '');
+  const [sizeLebar, setSizeLebar] = useState(room ? String(room.size.lebar) : '');
+
+  const isRectGeometry =
+    previewRoom?.geometry.type === 'rectangle' && (previewRoom.geometry.points?.length ?? 0) >= 8;
+
+  const applyRoomSize = (panjang: number, lebar: number) => {
+    setPreviewRoom((current) => {
+      if (!current || current.geometry.type !== 'rectangle') return current;
+      const points = resizedRectanglePoints(current.geometry.points, panjang, lebar);
+      const p = Math.round(panjang * 100) / 100;
+      const l = Math.round(lebar * 100) / 100;
+      return {
+        ...current,
+        geometry: { ...current.geometry, points },
+        size: { panjang: p, lebar: l, luas_m2: Math.round(p * l * 100) / 100 },
+      };
+    });
+  };
+
+  const handleSizeInput = (raw: string, otherRaw: string, setSelf: (value: string) => void) => {
+    setSelf(raw);
+    const p = Number(raw);
+    const l = Number(otherRaw);
+    if (!Number.isFinite(p) || !Number.isFinite(l) || p <= 0 || l <= 0) return;
+    applyRoomSize(p, l);
+  };
 
   const newPhotoPreviews = useMemo(
     () => newPhotos.map((file) => ({ file, url: URL.createObjectURL(file) })),
@@ -108,12 +138,39 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
                   </select>
                 </Field>
               )}
-              <Field label="Ukuran (terhitung otomatis)">
-                <p className={`${inputCls} text-slate-500`}>
-                  {previewRoom?.size
-                    ? `${previewRoom.size.panjang} × ${previewRoom.size.lebar} m · ${previewRoom.size.luas_m2} m²`
-                    : 'Belum ada denah'}
-                </p>
+              <Field label={isRectGeometry ? 'Ukuran Panjang × Lebar (m)' : 'Ukuran (terhitung otomatis)'}>
+                {previewRoom && isRectGeometry ? (
+                  <div className="mt-1 flex items-center gap-2">
+                    <input
+                      value={sizePanjang}
+                      onChange={(e) => handleSizeInput(e.target.value, sizeLebar, setSizePanjang)}
+                      type="number"
+                      min={1}
+                      step="any"
+                      aria-label="Panjang ruangan (m)"
+                      className={`${inputCls} mt-0`}
+                    />
+                    <span className="text-slate-400">×</span>
+                    <input
+                      value={sizeLebar}
+                      onChange={(e) => handleSizeInput(sizePanjang, e.target.value, setSizeLebar)}
+                      type="number"
+                      min={1}
+                      step="any"
+                      aria-label="Lebar ruangan (m)"
+                      className={`${inputCls} mt-0`}
+                    />
+                    <span className="whitespace-nowrap text-xs text-slate-500">
+                      = {previewRoom.size.luas_m2} m²
+                    </span>
+                  </div>
+                ) : (
+                  <p className={`${inputCls} text-slate-500`}>
+                    {previewRoom?.size
+                      ? `${previewRoom.size.panjang} × ${previewRoom.size.lebar} m · ${previewRoom.size.luas_m2} m² (otomatis dari polygon)`
+                      : 'Belum ada denah'}
+                  </p>
+                )}
               </Field>
               <Field label="Catatan">
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className={inputCls} />
@@ -151,7 +208,7 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
                 />
               </div>
               <p className="mt-1.5 text-xs text-slate-400">
-                Geser ruangan untuk mengubah posisi di denah.
+                Geser ruangan untuk mengubah posisi di denah, atau edit ukurannya lewat input Panjang × Lebar.
               </p>
               {(existingPhotos.length > 0 || newPhotoPreviews.length > 0) && (
                 <div className="mt-4">

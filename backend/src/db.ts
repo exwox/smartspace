@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { DBShape, PublicContentSettings } from './types.js';
+import type { DBShape, NotificationSettings, PublicContentSettings } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.SMARTSPACE_DATA_DIR
@@ -33,6 +33,12 @@ export const DEFAULT_PUBLIC_CONTENT: PublicContentSettings = {
   footerText: '© 2026 Smart Space — Raja Haji Fisabilillah Airport [TNJ]',
 };
 
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  enabled: false,
+  recipients: '',
+  notify_applicant: true,
+};
+
 function emptyDB(): DBShape {
   return {
     rooms: {},
@@ -41,6 +47,7 @@ function emptyDB(): DBShape {
     requests: {},
     floorPlans: {},
     publicContent: { ...DEFAULT_PUBLIC_CONTENT },
+    notifications: { ...DEFAULT_NOTIFICATION_SETTINGS },
     counters: { room: 0, request: 0, ticket: 0, tenant: 0, lease: 0, floor: 0 },
   };
 }
@@ -62,6 +69,7 @@ export function loadDB(): DBShape {
       const raw = fs.readFileSync(DB_FILE, 'utf-8');
       cache = JSON.parse(raw) as DBShape;
       cache.publicContent = { ...DEFAULT_PUBLIC_CONTENT, ...(cache.publicContent ?? {}) };
+      cache.notifications = { ...DEFAULT_NOTIFICATION_SETTINGS, ...(cache.notifications ?? {}) };
     } catch {
       cache = emptyDB();
     }

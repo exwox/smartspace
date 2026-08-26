@@ -102,6 +102,16 @@ export interface FloorText {
   entity: 'TEXT' | 'MTEXT';
 }
 
+/** Pengaturan notifikasi email untuk tiket pengajuan sewa. */
+export interface NotificationSettings {
+  /** Aktifkan pengiriman email saat ada tiket baru masuk. */
+  enabled: boolean;
+  /** Daftar email tujuan (admin), dipisah koma/titik koma/spasi. */
+  recipients: string;
+  /** Juga kirim email ke pengaju (konfirmasi tiket & hasil review). */
+  notify_applicant: boolean;
+}
+
 export type Attachment = {
   fieldname: string;
   originalname: string;
@@ -117,6 +127,7 @@ export interface DBShape {
   requests: Record<string, RentalRequest>;
   floorPlans: Record<string, FloorPlan>;
   publicContent?: PublicContentSettings;
+  notifications?: NotificationSettings;
   counters: { room: number; request: number; ticket: number; tenant: number; lease: number; floor: number };
 }
 
