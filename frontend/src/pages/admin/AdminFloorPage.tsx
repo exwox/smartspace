@@ -621,7 +621,7 @@ export default function AdminFloorPage() {
                         </ul>
                       )}
                       <p className="mt-1 text-[11px] text-slate-400">
-                        Foto pertama tampil pada lokasi ruangan di denah & peta publik.
+                        Foto tampil di galeri detail ruangan pada peta publik.
                       </p>
                     </div>
 

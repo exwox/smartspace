@@ -117,32 +117,6 @@ export default function MapCanvas({
     return drafts.filter((room) => room.floor === activeFloorName);
   }, [draftRooms, activeFloorName]);
 
-  // ---------- Cache foto ruangan agar bisa tampil di denah ----------
-  const photoCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
-  const [, setPhotoLoadTick] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    const urls = new Set<string>();
-    visibleRooms.forEach((r) => r.photos?.forEach((p) => p && urls.add(p)));
-    visibleDrafts.forEach((r) => r.photos?.forEach((p) => p && urls.add(p)));
-    urls.forEach((url) => {
-      if (photoCacheRef.current.has(url)) return;
-      const img = new window.Image();
-      img.onload = () => {
-        if (!cancelled) setPhotoLoadTick((t) => t + 1); // picu render ulang saat foto siap
-      };
-      img.onerror = () => {
-        photoCacheRef.current.delete(url);
-      };
-      img.src = url;
-      photoCacheRef.current.set(url, img);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [visibleRooms, visibleDrafts]);
-
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -406,54 +380,13 @@ export default function MapCanvas({
             shadowColor={hl ? '#2563eb' : undefined} shadowBlur={hl ? 12 : 0}
             lineJoin="round" opacity={0.82} />
         )}
-        {(() => {
-          // Foto pertama ruangan ditampilkan pada lokasinya di denah (mode "cover", terpotong
-          // mengikuti bentuk ruangan). Warna status tetap terlihat lewat transparansi foto.
-          const photoUrl = room.photos?.[0];
-          const img = photoUrl ? photoCacheRef.current.get(photoUrl) : undefined;
-          if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return null;
-          if (roomWidth < 14 || roomHeight < 12) return null; // terlalu kecil, jangan tampilkan
-          const bw = b.maxX - b.minX;
-          const bh = b.maxY - b.minY;
-          const coverScale = Math.max(bw / img.naturalWidth, bh / img.naturalHeight);
-          const drawW = img.naturalWidth * coverScale;
-          const drawH = img.naturalHeight * coverScale;
-          return (
-            <Group
-              listening={false}
-              clip={isRect ? { x: b.minX, y: b.minY, width: bw, height: bh } : undefined}
-              clipFunc={
-                isRect
-                  ? undefined
-                  : (ctx: Konva.Context) => {
-                      const pts = room.geometry.points;
-                      ctx.beginPath();
-                      ctx.moveTo(pts[0], pts[1]);
-                      for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
-                      ctx.closePath();
-                    }
-              }
-            >
-              <KonvaImage
-                image={img}
-                x={b.minX + (bw - drawW) / 2}
-                y={b.minY + (bh - drawH) / 2}
-                width={drawW}
-                height={drawH}
-                opacity={isDraft ? 0.92 : 0.74}
-              />
-            </Group>
-          );
-        })()}
         <Group listening={false}>
           <Text x={b.minX} y={labelTop} width={roomWidth} height={codeFontSize}
             text={room.room_code} fontSize={codeFontSize} fontStyle="bold" fill="#1e293b"
-            align="center" verticalAlign="middle" ellipsis wrap="none"
-            shadowColor="#f8fafc" shadowBlur={2} shadowOpacity={0.9} />
+            align="center" verticalAlign="middle" ellipsis wrap="none" />
           <Text x={b.minX} y={labelTop + codeFontSize + labelGap} width={roomWidth} height={statusFontSize}
             text={statusText} fontSize={statusFontSize} fill="#334155"
-            align="center" verticalAlign="middle" ellipsis wrap="none"
-            shadowColor="#f8fafc" shadowBlur={2} shadowOpacity={0.9} />
+            align="center" verticalAlign="middle" ellipsis wrap="none" />
         </Group>
       </Group>
     );
