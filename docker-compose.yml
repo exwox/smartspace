@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  smart-space:
+    build: .
+    container_name: smart-space
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - JWT_SECRET=${JWT_SECRET:-smart-space-secret-change-me-in-production}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+    volumes:
+      # data & upload persist meskipun container di-recreate
+      - smart-space-data:/app/backend/data
+      - smart-space-uploads:/app/backend/uploads
+
+volumes:
+  smart-space-data:
+  smart-space-uploads:

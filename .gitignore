@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+release/
+.env
+*.local
+backend/data/
+backend/uploads/
+frontend/dist/
+.DS_Store
+*.log
+*.tsbuildinfo

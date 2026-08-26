@@ -1,0 +1,60 @@
+{
+  "name": "smart-space-tnj-desktop",
+  "version": "1.0.0",
+  "description": "Smart Space Raja Haji Fisabilillah Airport - Desktop",
+  "main": "electron/main.cjs",
+  "author": "Smart Space TNJ",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build:web": "npm --prefix frontend run build",
+    "build:api": "npm --prefix backend run build",
+    "build:app": "npm run build:web && npm run build:api",
+    "desktop": "npm run build:app && electron .",
+    "dist:win": "npm run build:app && electron-builder --win nsis portable",
+    "dist:portable": "npm run build:app && electron-builder --win portable",
+    "dist:installer": "npm run build:app && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.1"
+  },
+  "devDependencies": {
+    "electron": "^40.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "id.co.smartspace.tnj",
+    "productName": "Smart Space TNJ",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "backend/dist/**/*",
+      "backend/data/db.json",
+      "frontend/dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-${arch}-nsis.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Smart Space TNJ"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}-portable.${ext}"
+    }
+  }
+}
