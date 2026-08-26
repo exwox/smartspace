@@ -39,9 +39,15 @@ export default function FormView({
             </div>
             <p className="text-sm font-semibold text-emerald-600">{formatRupiah(room.price)}</p>
           </div>
-          {room.status !== 'kosong' && (
+          {room.status === 'terisi' && (
+            <p className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-600">
+              ⚠️ Ruangan ini sudah terisi dan tidak menerima pengajuan baru.
+            </p>
+          )}
+          {room.status !== 'terisi' && (room.pending_requests ?? 0) > 0 && (
             <p className="mt-3 rounded-lg bg-amber-50 p-2 text-xs text-amber-700">
-              ⚠️ Ruangan ini tidak lagi berstatus kosong. Pengajuan mungkin ditolak.
+              ℹ️ Sudah ada {room.pending_requests} pengajuan untuk ruangan ini. Pengajuan Anda tetap
+              diproses — admin akan menyetujui salah satu tiket.
             </p>
           )}
         </div>

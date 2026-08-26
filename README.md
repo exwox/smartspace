@@ -15,8 +15,8 @@ terminal (booth, kios, iklan, stan brand). Dibangun berdasarkan **`plan.md`**.
 | 1 | **MVP Peta Publik** — peta interaktif (zoom/pan/touch), warna status, klik ruangan → detail (side panel / bottom sheet), filter & search, responsive | ✅ |
 | 2 | **Modul Admin — Manajemen Ruangan** — CRUD, edit geometri via drag di peta | ✅ |
 | 3 | **Modul Admin — Import DXF** — file `.dxf` diparse di backend → polygon ruangan otomatis | ✅ |
-| 4 | **Modul Pengajuan Sewa** — form tanpa login + nomor tiket + tracking status | ✅ |
-| 5 | **Modul Approval Admin** — approve/reject, peta ter-update otomatis, riwayat penyewa | ✅ |
+| 4 | **Modul Pengajuan Sewa** — form tanpa login + nomor tiket + tracking status + **multi-tiket per ruangan** | ✅ |
+| 5 | **Modul Approval Admin** — approve/reject: tiket terpilih ⇒ ruangan terisi & tiket lain otomatis ditolak, riwayat penyewa | ✅ |
 | 6 | **Riwayat Brand per Ruangan** — historis lease di detail panel publik | ✅ |
 | 7 | **Notifikasi** — tracking status publik via nomor tiket (in-app) | 🟡 (email dapat ditambahkan) |
 | 8 | **Dashboard & Laporan** — statistik okupansi, pending requests | ✅ |
@@ -75,11 +75,11 @@ Ubah di production melalui env: `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `JWT_SECRET`
 
 1. **Publik** membuka halaman utama → peta terminal: 🟢 hijau = kosong, 🔴 merah = terisi, 🟡 kuning = proses.
 2. Klik ruangan → detail (ukuran, harga, lokasi, brand saat ini, **riwayat penyewa**).
-3. Klik **Ajukan Sewa** (hanya ruangan kosong) → isi form tanpa login + upload dokumen (opsional).
+3. Klik **Ajukan Sewa** (ruangan belum terisi — beberapa brand boleh mengajukan ruangan yang sama) → isi form tanpa login + upload dokumen (opsional).
 4. Sistem memberi **nomor tiket** untuk tracking (`/tracking`).
 5. **Admin** login → menu **Pengajuan** → *Approve* / *Tolak* (dengan alasan).
-   - Approve ⇒ otomatis buat tenant & lease, ruangan di peta jadi **terisi**.
-   - Tolak ⇒ ruangan kembali **kosong**, alasan tampil di tracking publik.
+   - Approve ⇒ otomatis buat tenant & lease, ruangan di peta jadi **terisi**, dan semua tiket pending lain pada ruangan yang sama otomatis ditolak.
+   - Tolak ⇒ hanya tiket itu yang ditolak; ruangan dan tiket lain tetap bisa diproses.
 6. Admin dapat upload `.dxf`/gambar denah di menu **Denah/DXF**, atau tambah/edit ruangan manual di **Ruangan**.
 
 ---

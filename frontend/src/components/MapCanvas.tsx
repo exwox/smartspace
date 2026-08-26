@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Line, Rect, Text, Group, Image as KonvaImage } from 'react-konva';
 import type Konva from 'konva';
 import type { Room, FloorPlan, RoomStatus } from '../types.ts';
-import { STATUS_LABEL } from '../types.ts';
+import { STATUS_LABEL, displayStatus } from '../types.ts';
 
 interface MapCanvasProps {
   rooms: Room[];
@@ -238,9 +238,10 @@ export default function MapCanvas({
     const roomHeight = Math.max(0, b.maxY - b.minY);
     const selected = selectedRoomId === room.room_id;
     const hl = highlight === room.room_id;
-    const fill = STATUS_FILL[room.status] ?? '#dcfce7';
+    const effectiveStatus = displayStatus(room);
+    const fill = STATUS_FILL[effectiveStatus] ?? '#dcfce7';
     const isRect = room.geometry.type === 'rectangle';
-    const statusText = STATUS_LABEL[room.status];
+    const statusText = STATUS_LABEL[effectiveStatus];
     // Ukuran teks mengikuti ruang yang tersedia, bukan angka font tetap.
     // Batas maksimum menjaga label tetap kecil pada denah berukuran besar.
     const codeFontSize = Math.max(1.5, Math.min(

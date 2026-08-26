@@ -53,6 +53,10 @@ export default function AdminRequestsPage() {
         {requests.filter((r) => r.status === 'pending').length} pengajuan menunggu review ·{' '}
         {requests.filter((r) => r.status !== 'pending').length} sudah diproses
       </p>
+      <p className="mt-1 text-xs text-slate-400">
+        Satu ruangan dapat menerima beberapa tiket sekaligus. Menyetujui satu tiket akan otomatis
+        menolak tiket pending lain di ruangan yang sama dan mengubah ruangan menjadi &quot;Terisi&quot;.
+      </p>
 
       {error && (
         <div className="mt-4 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">

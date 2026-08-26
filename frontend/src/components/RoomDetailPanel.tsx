@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Room } from '../types.ts';
-import { STATUS_LABEL, STATUS_COLOR, formatRupiah, formatDate } from '../types.ts';
+import { STATUS_LABEL, STATUS_COLOR, formatRupiah, formatDate, displayStatus, canApplyRoom } from '../types.ts';
 
 interface Props {
   room: Room | null;
@@ -25,17 +25,19 @@ export default function RoomDetailPanel({ room, onClose }: Props) {
     );
   }
 
+  const effectiveStatus = displayStatus(room);
+  const pendingCount = room.pending_requests ?? 0;
   const statusBadge = (
     <span
       className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold"
-      style={{ backgroundColor: STATUS_COLOR[room.status] + '22', color: STATUS_COLOR[room.status] }}
+      style={{ backgroundColor: STATUS_COLOR[effectiveStatus] + '22', color: STATUS_COLOR[effectiveStatus] }}
     >
-      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_COLOR[room.status] }} />
-      {STATUS_LABEL[room.status]}
+      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_COLOR[effectiveStatus] }} />
+      {STATUS_LABEL[effectiveStatus]}
     </span>
   );
 
-  const available = room.status === 'kosong';
+  const available = canApplyRoom(room);
 
   return (
     <div className="thin-scroll flex h-full flex-col overflow-y-auto p-4">
@@ -121,20 +123,26 @@ export default function RoomDetailPanel({ room, onClose }: Props) {
         </div>
       )}
 
-      {/* tombol ajukan sewa (trust-per rule) */}
+      {/* info antrean tiket (multi-pengajuan per ruangan) */}
+      {!available && pendingCount > 0 && (
+        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+          🎫 {pendingCount} pengajuan sedang ditinjau admin untuk ruangan ini. Anda tetap dapat mengirim
+          pengajuan — admin yang memilih tiket mana yang disetujui.
+        </p>
+      )}
+
+      {/* tombol ajukan sewa — aktif selama ruangan belum terisi */}
       {available && (
         <Link
           to={`/sewa/${room.room_id}`}
           className="mt-4 block rounded-xl bg-emerald-600 px-4 py-3 text-center text-sm font-bold text-white shadow hover:bg-emerald-700"
         >
-          Ajukan Sewa →
+          {pendingCount > 0 ? 'Ikut Mengajukan Sewa →' : 'Ajukan Sewa →'}
         </Link>
       )}
       {!available && (
         <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
-          {room.status === 'terisi'
-            ? 'Ruangan ini sedang terisi. Hubungi admin untuk informasi ruangan serupa.'
-            : 'Ruangan sedang dalam proses pengajuan oleh pihak lain. Coba lagi nanti.'}
+          Ruangan ini sudah terisi. Hubungi admin untuk informasi ruangan serupa.
         </p>
       )}
 

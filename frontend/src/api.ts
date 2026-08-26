@@ -169,7 +169,7 @@ export async function adminReviewRequest(id: string, action: 'approve' | 'reject
     headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, reason }),
   });
-  return handle<{ request: RentalRequest }>(res);
+  return handle<{ request: RentalRequest; superseded_tickets?: number }>(res);
 }
 
 export async function adminFetchStats() {

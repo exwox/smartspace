@@ -43,6 +43,8 @@ export interface Room {
   history: Lease[] | null;
   current_tenant?: { tenant_id: string; brand_name: string } | null;
   active_lease?: Lease | null;
+  /** Jumlah tiket pengajuan berstatus pending untuk ruangan ini (multi-tiket per ruangan) */
+  pending_requests?: number;
 }
 
 export interface RentalRequest {
@@ -166,6 +168,21 @@ export const STATUS_COLOR: Record<RoomStatus, string> = {
   terisi: '#ef4444', // merah
   proses: '#f59e0b', // kuning
 };
+
+/**
+ * Status efektif untuk tampilan publik: ruangan kosong yang memiliki tiket
+ * pending ditampilkan kuning ("Dalam Proses"), namun tetap menerima tiket baru.
+ * Status berubah menjadi "Terisi" hanya setelah admin menyetujui salah satu tiket.
+ */
+export function displayStatus(room: Pick<Room, 'status' | 'pending_requests'>): RoomStatus {
+  if (room.status === 'kosong' && (room.pending_requests ?? 0) > 0) return 'proses';
+  return room.status;
+}
+
+/** Ruangan masih menerima pengajuan selama belum disetujui untuk penyewa lain. */
+export function canApplyRoom(room: Pick<Room, 'status'>): boolean {
+  return room.status !== 'terisi';
+}
 
 export function formatRupiah(n: number): string {
   if (!n) return 'Hubungi Admin';

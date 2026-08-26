@@ -4,6 +4,7 @@ import MapCanvas from '../components/MapCanvas.tsx';
 import RoomDetailPanel from '../components/RoomDetailPanel.tsx';
 import { fetchRooms, fetchFloors } from '../api.ts';
 import type { Room, FloorPlan } from '../types.ts';
+import { displayStatus } from '../types.ts';
 
 export default function PublicMapPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -29,7 +30,7 @@ export default function PublicMapPage() {
   const shownRooms = useMemo(() => {
     return rooms.filter((room) => {
       if (floorFilter && room.floor !== floorFilter) return false;
-      if (statusFilter !== 'all' && room.status !== statusFilter) return false;
+      if (statusFilter !== 'all' && displayStatus(room) !== statusFilter) return false;
       if (search && !`${room.room_code} ${room.name}`.toLowerCase().includes(search.toLowerCase())) {
         return false;
       }

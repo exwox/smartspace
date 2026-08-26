@@ -187,6 +187,11 @@ export default function AdminRoomsPage() {
                   >
                     {STATUS_LABEL[room.status]}
                   </span>
+                  {(room.pending_requests ?? 0) > 0 && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                      🎫 {room.pending_requests} tiket
+                    </span>
+                  )}
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">
                   {room.room_code} · {room.floor} · {room.zone}

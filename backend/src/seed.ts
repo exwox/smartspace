@@ -77,7 +77,7 @@ export function seed() {
     mkRoom('A-01', 'Booth A-01', 'Lantai 1', 'Zona A', 60, 60, 160, 120, 4500000),
     mkRoom('A-02', 'Booth A-02', 'Lantai 1', 'Zona A', 250, 60, 160, 120, 4500000, 'terisi'),
     mkRoom('A-03', 'Booth A-03', 'Lantai 1', 'Zona A', 440, 60, 160, 120, 4200000),
-    mkRoom('B-01', 'Kios B-01', 'Lantai 1', 'Zona B', 660, 60, 200, 120, 6000000, 'proses'),
+    mkRoom('B-01', 'Kios B-01', 'Lantai 1', 'Zona B', 660, 60, 200, 120, 6000000),
     mkRoom('B-02', 'Kios B-02', 'Lantai 1', 'Zona B', 890, 60, 200, 120, 6000000),
     mkRoom('C-01', 'Booth C-01', 'Lantai 2', 'Zona C', 60, 60, 180, 130, 3500000),
     mkRoom('C-02', 'Booth C-02', 'Lantai 2', 'Zona C', 270, 60, 180, 130, 3500000, 'terisi'),
@@ -150,10 +150,12 @@ export function seed() {
   roomC02.current_lease_end = '2025-02-28';
 
   // ---- Contoh pengajuan pending ----
+  // Demo multi-tiket: B-01 punya 2 tiket pending sekaligus. Status ruangan tetap
+  // 'kosong' sampai admin menyetujui salah satu tiket; tiket lain otomatis ditolak.
   const req1: RentalRequest = {
     request_id: nextId('REQ', 'request'),
     ticket_no: nextTicket(),
-    room_id: rooms[3].room_id, // B-01 (status proses)
+    room_id: rooms[3].room_id, // B-01 (multi-tiket: 2 pengajuan pending)
     brand_name: 'Warung Teknologi',
     pic_name: 'Andi Wijaya',
     contact_phone: '0811-111-2222',
@@ -188,15 +190,35 @@ export function seed() {
     reviewed_by: null,
     reviewed_at: null,
   };
+  const req3: RentalRequest = {
+    request_id: nextId('REQ', 'request'),
+    ticket_no: nextTicket(),
+    room_id: rooms[3].room_id, // B-01 — tiket kedua untuk ruangan yang sama
+    brand_name: 'Kopi Bahari',
+    pic_name: 'Rina Halim',
+    contact_phone: '0812-999-8888',
+    contact_email: 'rina@kopibahari.id',
+    duration_months: 12,
+    start_date: '2024-10-01',
+    budget: 'Rp 6-6,5 juta/bulan',
+    notes: 'Ingin membuka outlet kopi di area tunggu keberangkatan.',
+    attachments: [],
+    status: 'pending',
+    reject_reason: null,
+    created_at: tNow,
+    reviewed_by: null,
+    reviewed_at: null,
+  };
   d.requests[req1.request_id] = req1;
   d.requests[req2.request_id] = req2;
+  d.requests[req3.request_id] = req3;
 
   persist();
   console.log('[seed] Data demo dibuat:', {
     rooms: rooms.length,
     tenants: 2,
     leases: 3,
-    requests: 2,
+    requests: 3,
     floors: 2,
   });
 }

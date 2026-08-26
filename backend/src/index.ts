@@ -154,7 +154,9 @@ function syncExpiredLeases(d: DBShape): boolean {
   return changed;
 }
 
-// DTO ruangan: embed tenant aktif, lease aktif, dan histori sewa
+// DTO ruangan: embed tenant aktif, lease aktif, histori sewa, dan jumlah tiket pending.
+// Multi-tiket: satu ruangan boleh memiliki beberapa pengajuan pending sekaligus;
+// status 'terisi' baru berlaku saat admin menyetujui salah satu tiket.
 function roomDto(d: DBShape, room: Room) {
   const lease = activeLeaseFor(d, room.room_id);
   const tenant = room.current_tenant_id ? (d.tenants[room.current_tenant_id] ?? null) : null;
@@ -162,7 +164,10 @@ function roomDto(d: DBShape, room: Room) {
     .filter((l) => l.room_id === room.room_id)
     .sort((a, b) => b.start_date.localeCompare(a.start_date))
     .map((l) => ({ ...l, tenant: l.tenant_id ? (d.tenants[l.tenant_id] ?? null) : null }));
-  return { ...room, current_tenant: tenant, active_lease: lease, history };
+  const pending_requests = Object.values(d.requests).filter(
+    (r) => r.room_id === room.room_id && r.status === 'pending',
+  ).length;
+  return { ...room, current_tenant: tenant, active_lease: lease, history, pending_requests };
 }
 
 // ------------------------------------------------------------------
@@ -206,8 +211,10 @@ app.post('/api/requests', upload.array('attachments', 5), (req, res) => {
   const roomId = String(req.body.room_id ?? '');
   const room = d.rooms[roomId];
   if (!room) return res.status(404).json({ error: 'Ruangan tidak ditemukan' });
-  if (room.status !== 'kosong') {
-    return res.status(400).json({ error: 'Ruangan sedang tidak tersedia untuk pengajuan baru' });
+  // Multi-tiket: selama ruangan belum disetujui untuk penyewa lain ('terisi'),
+  // pengajuan baru tetap diterima walau sudah ada tiket pending sebelumnya.
+  if (room.status === 'terisi') {
+    return res.status(400).json({ error: 'Ruangan sudah terisi dan tidak menerima pengajuan baru' });
   }
 
   const files = (req.files as Express.Multer.File[] | undefined) ?? [];
@@ -236,9 +243,8 @@ app.post('/api/requests', upload.array('attachments', 5), (req, res) => {
   };
   d.requests[reqId] = request;
 
-  // Status ruangan sementara -> "proses" (plan.md 4.1 langkah 7)
-  room.status = 'proses';
-  room.updated_at = now();
+  // Multi-tiket: status ruangan TIDAK diubah saat pengajuan masuk.
+  // Ruangan menjadi 'terisi' hanya setelah admin menyetujui salah satu tiket.
   persist();
 
   res.status(201).json({
@@ -721,6 +727,8 @@ app.patch('/api/admin/requests/:id', (req, res) => {
     return res.status(409).json({ error: 'Pengajuan sudah diproses dan tidak dapat direview ulang' });
   }
   const action = String(req.body.action ?? '');
+  // Counter tiket pending lain yang otomatis ditolak karena ruangan sudah dipilih untuk tiket tertentu
+  let supersededTickets = 0;
 
   if (action === 'approve') {
     const room = d.rooms[request.room_id];
@@ -761,12 +769,25 @@ app.patch('/api/admin/requests/:id', (req, res) => {
       room.updated_at = now();
     }
     request.status = 'approved';
-  } else if (action === 'reject') {
-    const room = d.rooms[request.room_id];
-    if (room && room.status === 'proses') {
-      room.status = 'kosong';
-      room.updated_at = now();
+
+    // Multi-tiket: tolak otomatis semua tiket pending lain pada ruangan yang sama,
+    // karena ruangan kini telah disetujui untuk pemenang tiket ini.
+    for (const other of Object.values(d.requests)) {
+      if (
+        other.request_id !== request.request_id &&
+        other.room_id === request.room_id &&
+        other.status === 'pending'
+      ) {
+        other.status = 'rejected';
+        other.reject_reason = `Ruangan ${room.room_code} telah disetujui untuk tiket ${request.ticket_no}`;
+        other.reviewed_by = (req as any).admin?.username ?? 'admin';
+        other.reviewed_at = now();
+        supersededTickets += 1;
+      }
     }
+  } else if (action === 'reject') {
+    // Penolakan satu tiket TIDAK mengubah status ruangan —
+    // tiket pending lain pada ruangan yang sama tetap bisa diproses admin.
     request.status = 'rejected';
     request.reject_reason = String(req.body.reason ?? 'Tidak ada alasan').trim();
   } else {
@@ -775,7 +796,7 @@ app.patch('/api/admin/requests/:id', (req, res) => {
   request.reviewed_by = (req as any).admin?.username ?? 'admin';
   request.reviewed_at = now();
   persist();
-  res.json({ request });
+  res.json({ request, superseded_tickets: supersededTickets });
 });
 
 // Statistik dashboard admin (perkiraan milestone 8)
