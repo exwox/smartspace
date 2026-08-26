@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import LandingPage from './pages/LandingPage.tsx';
 import PublicMapPage from './pages/PublicMapPage.tsx';
 import RequestFormPage from './pages/RequestFormPage.tsx';
@@ -10,24 +10,37 @@ import AdminRequestsPage from './pages/admin/AdminRequestsPage.tsx';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage.tsx';
 import AdminFloorPage from './pages/admin/AdminFloorPage.tsx';
 import AdminSettingsPage from './pages/admin/AdminSettingsPage.tsx';
+import AdminChatsPage from './pages/admin/AdminChatsPage.tsx';
+import ChatWidget from './components/ChatWidget.tsx';
+
+/** Widget chat CRM hanya tampil di halaman publik (bukan area admin). */
+function ChatWidgetScope() {
+  const location = useLocation();
+  if (location.pathname.startsWith('/admin')) return null;
+  return <ChatWidget />;
+}
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/map" element={<PublicMapPage />} />
-      <Route path="/sewa/:roomId" element={<RequestFormPage />} />
-      <Route path="/tracking" element={<TrackPage />} />
-      <Route path="/admin/login" element={<AdminLoginPage />} />
-      <Route path="/admin" element={<AdminLayout />}>
-        <Route index element={<Navigate to="/admin/dashboard" replace />} />
-        <Route path="dashboard" element={<AdminDashboardPage />} />
-        <Route path="rooms" element={<AdminRoomsPage />} />
-        <Route path="floor" element={<AdminFloorPage />} />
-        <Route path="requests" element={<AdminRequestsPage />} />
-        <Route path="settings" element={<AdminSettingsPage />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/map" element={<PublicMapPage />} />
+        <Route path="/sewa/:roomId" element={<RequestFormPage />} />
+        <Route path="/tracking" element={<TrackPage />} />
+        <Route path="/admin/login" element={<AdminLoginPage />} />
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="dashboard" element={<AdminDashboardPage />} />
+          <Route path="rooms" element={<AdminRoomsPage />} />
+          <Route path="floor" element={<AdminFloorPage />} />
+          <Route path="requests" element={<AdminRequestsPage />} />
+          <Route path="chats" element={<AdminChatsPage />} />
+          <Route path="settings" element={<AdminSettingsPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      <ChatWidgetScope />
+    </>
   );
 }

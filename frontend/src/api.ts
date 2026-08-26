@@ -1,4 +1,6 @@
 import type {
+  AgentSettingsView,
+  ChatConversation,
   FloorPlan,
   NotificationSettings,
   PublicContentSettings,
@@ -229,4 +231,121 @@ export async function adminSendTestNotificationEmail(email: string) {
     body: JSON.stringify({ email }),
   });
   return handle<{ sent: boolean; error?: string }>(res);
+}
+
+// ---------- CHAT CRM — WIDGET PUBLIK (popup pojok kanan bawah) ----------
+export interface SendChatPayload {
+  visitor_token: string;
+  name: string;
+  email: string;
+  text: string;
+  page?: string;
+}
+
+export async function sendChatMessage(payload: SendChatPayload) {
+  const res = await fetch(`${BASE}/api/chat/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return handle<{ conversation: ChatConversation }>(res);
+}
+
+/** Ambil percakapan pengunjung; mengembalikan null bila belum pernah chat. */
+export async function fetchChatConversation(token: string) {
+  const res = await fetch(`${BASE}/api/chat/conversations/${encodeURIComponent(token)}`);
+  if (res.status === 404) return { conversation: null as ChatConversation | null };
+  return handle<{ conversation: ChatConversation | null }>(res);
+}
+
+export async function markChatRead(token: string) {
+  const res = await fetch(`${BASE}/api/chat/conversations/${encodeURIComponent(token)}/read`, {
+    method: 'POST',
+  });
+  return handle<{ ok: boolean; conversation: ChatConversation }>(res);
+}
+
+// ---------- CHAT CRM — ADMIN ----------
+export async function adminFetchChats(status?: 'open' | 'closed') {
+  const qs = status ? `?status=${status}` : '';
+  const res = await fetch(`${BASE}/api/admin/chats${qs}`, { headers: getAuthHeaders() });
+  return handle<{ chats: ChatConversation[] }>(res);
+}
+
+export async function adminFetchUnreadChatCount() {
+  const res = await fetch(`${BASE}/api/admin/chats/unread-count`, { headers: getAuthHeaders() });
+  return handle<{ conversations: number; messages: number }>(res);
+}
+
+export async function adminFetchChat(id: string) {
+  const res = await fetch(`${BASE}/api/admin/chats/${encodeURIComponent(id)}`, {
+    headers: getAuthHeaders(),
+  });
+  return handle<{ conversation: ChatConversation }>(res);
+}
+
+export async function adminReplyChat(id: string, text: string) {
+  const res = await fetch(`${BASE}/api/admin/chats/${encodeURIComponent(id)}/reply`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  return handle<{ conversation: ChatConversation }>(res);
+}
+
+export async function adminSetChatStatus(id: string, status: 'open' | 'closed') {
+  const res = await fetch(`${BASE}/api/admin/chats/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  return handle<{ conversation: ChatConversation }>(res);
+}
+
+export async function adminDeleteChat(id: string) {
+  const res = await fetch(`${BASE}/api/admin/chats/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return handle<{ ok: boolean }>(res);
+}
+
+// ---------- CHAT CRM — AI AGENT (9Router, OpenAI-compatible) ----------
+export interface SaveAgentSettingsPayload {
+  enabled: boolean;
+  base_url: string;
+  model: string;
+  system_prompt: string;
+  /** Kirim hanya bila ingin mengganti API key; string kosong = tetap pakai yang tersimpan. */
+  api_key?: string;
+  clear_api_key?: boolean;
+}
+
+export async function adminFetchAgentSettings() {
+  const res = await fetch(`${BASE}/api/admin/agent-settings`, { headers: getAuthHeaders() });
+  return handle<{ settings: AgentSettingsView }>(res);
+}
+
+export async function adminSaveAgentSettings(payload: SaveAgentSettingsPayload) {
+  const res = await fetch(`${BASE}/api/admin/agent-settings`, {
+    method: 'PUT',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return handle<{ settings: AgentSettingsView; message: string }>(res);
+}
+
+export async function adminTestAgentSettings() {
+  const res = await fetch(`${BASE}/api/admin/agent-settings/test`, { method: 'POST', headers: getAuthHeaders() });
+  return handle<{ ok: boolean; reply?: string; error?: string; detail?: string }>(res);
+}
+
+/** Switch mode Manual ↔ Agent untuk satu percakapan chat. */
+export async function adminSetChatAgentMode(id: string, active: boolean) {
+  const res = await fetch(`${BASE}/api/admin/chats/${encodeURIComponent(id)}/agent`, {
+    method: 'PATCH',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ active }),
+  });
+  return handle<{ conversation: ChatConversation }>(res);
 }

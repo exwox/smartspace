@@ -61,7 +61,9 @@ return (
       {/* header */}
       <header className="z-20 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-lg text-white">🧭</span>
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white">
+            <img src="/brand/logo.svg" alt="Logo Smart Space" className="h-7 w-7" />
+          </span>
           <div className="leading-tight">
             <h1 className="text-base font-bold text-slate-900 sm:text-lg">Smart Space</h1>
             <p className="hidden text-xs text-slate-500 sm:block">Peta Sewa Ruangan Terminal</p>

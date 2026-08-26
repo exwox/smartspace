@@ -102,6 +102,36 @@ export interface FloorText {
   entity: 'TEXT' | 'MTEXT';
 }
 
+// ---------- Chat CRM (widget popup pojok kanan bawah) ----------
+export type ChatSender = 'visitor' | 'admin' | 'ai' | 'system';
+
+export interface ChatMessage {
+  message_id: string;
+  sender: ChatSender;
+  body: string;
+  created_at: string;
+}
+
+export interface ChatConversation {
+  conversation_id: string;
+  /** Token acak milik browser pengunjung (localStorage) — identitas tanpa login. */
+  visitor_token: string;
+  visitor_name: string;
+  visitor_email: string;
+  /** Path halaman tempat chat dimulai, mis. "/map". */
+  page_url: string | null;
+  status: 'open' | 'closed';
+  /** AI agent aktif membalas otomatis untuk percakapan ini (false = admin ambil alih manual). */
+  agent_active: boolean;
+  /** Pesan visitor yang belum dibaca admin. */
+  unread_for_admin: number;
+  /** Balasan admin yang belum dibaca visitor. */
+  unread_for_visitor: number;
+  messages: ChatMessage[];
+  created_at: string;
+  updated_at: string;
+}
+
 /** Pengaturan notifikasi email untuk tiket pengajuan sewa. */
 export interface NotificationSettings {
   /** Aktifkan pengiriman email saat ada tiket baru masuk. */
@@ -110,6 +140,27 @@ export interface NotificationSettings {
   recipients: string;
   /** Juga kirim email ke pengaju (konfirmasi tiket & hasil review). */
   notify_applicant: boolean;
+}
+
+// ---------- AI Agent — balasan chat otomatis via gateway 9Router ----------
+export interface AgentSettings {
+  /** Mode Agent aktif: chat baru dibalas otomatis oleh AI. */
+  enabled: boolean;
+  /** Base URL gateway OpenAI-compatible, default 9Router lokal: http://localhost:20128/v1 */
+  base_url: string;
+  /** API key opsional (Bearer). Kosongkan untuk gateway lokal tanpa auth. */
+  api_key: string;
+  model: string;
+  system_prompt: string;
+}
+
+/** Bentuk settings yang aman dikirim ke frontend — api_key tidak pernah diekspos. */
+export interface AgentSettingsView {
+  enabled: boolean;
+  base_url: string;
+  model: string;
+  system_prompt: string;
+  api_key_configured: boolean;
 }
 
 export type Attachment = {
@@ -126,9 +177,11 @@ export interface DBShape {
   leases: Record<string, Lease>;
   requests: Record<string, RentalRequest>;
   floorPlans: Record<string, FloorPlan>;
+  chats: Record<string, ChatConversation>;
   publicContent?: PublicContentSettings;
   notifications?: NotificationSettings;
-  counters: { room: number; request: number; ticket: number; tenant: number; lease: number; floor: number };
+  agentSettings?: AgentSettings;
+  counters: { room: number; request: number; ticket: number; tenant: number; lease: number; floor: number; chat: number };
 }
 
 export interface PublicContentSettings {

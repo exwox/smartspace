@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import multer from 'multer';
 import { loginHandler, requireAdmin } from './auth.js';
-import { DEFAULT_NOTIFICATION_SETTINGS, DEFAULT_PUBLIC_CONTENT, loadDB, nextId, nextTicket, now, persist, values } from './db.js';
+import { DEFAULT_AGENT_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, DEFAULT_PUBLIC_CONTENT, loadDB, nextId, nextTicket, now, persist, values } from './db.js';
 import { parseDXF, polygonArea } from './dxf.js';
 import {
   newTicketAdminMail,
@@ -16,7 +16,11 @@ import {
   ticketStatusMail,
 } from './mailer.js';
 import type {
+  AgentSettings,
+  AgentSettingsView,
   Attachment,
+  ChatConversation,
+  ChatMessage,
   DBShape,
   FloorPlan,
   Lease,
@@ -209,6 +213,242 @@ app.get('/api/floors', (_req: Request, res: Response) => {
 app.get('/api/public-content', (_req: Request, res: Response) => {
   const d = loadDB();
   res.json({ settings: { ...DEFAULT_PUBLIC_CONTENT, ...(d.publicContent ?? {}) } });
+});
+
+// ------------------------------------------------------------------
+// PUBLIC: chat CRM (widget popup pojok kanan bawah, tanpa login)
+// ------------------------------------------------------------------
+const CHAT_BODY_MAX = 2000;
+
+function findChatByToken(d: DBShape, token: string): ChatConversation | null {
+  const key = String(token ?? '').trim();
+  if (!key) return null;
+  return Object.values(d.chats).find((c) => c.visitor_token === key) ?? null;
+}
+
+function chatDto(c: ChatConversation) {
+  return {
+    conversation_id: c.conversation_id,
+    visitor_token: c.visitor_token,
+    visitor_name: c.visitor_name,
+    visitor_email: c.visitor_email,
+    page_url: c.page_url,
+    status: c.status,
+    agent_active: c.agent_active !== false,
+    unread_for_admin: c.unread_for_admin,
+    unread_for_visitor: c.unread_for_visitor,
+    messages: c.messages,
+    created_at: c.created_at,
+    updated_at: c.updated_at,
+    last_message: c.messages.length ? c.messages[c.messages.length - 1] : null,
+  };
+}
+
+// ---------- AI Agent — balasan chat otomatis via gateway 9Router ----------
+const AGENT_TIMEOUT_MS = 30_000;
+
+function getAgentSettings(d: DBShape): AgentSettings {
+  return { ...DEFAULT_AGENT_SETTINGS, ...(d.agentSettings ?? {}) };
+}
+
+function agentSettingsView(s: AgentSettings): AgentSettingsView {
+  return {
+    enabled: s.enabled,
+    base_url: s.base_url,
+    model: s.model,
+    system_prompt: s.system_prompt,
+    api_key_configured: Boolean(s.api_key),
+  };
+}
+
+/**
+ * Panggil gateway 9Router (OpenAI-compatible) di endpoint POST {base_url}/chat/completions.
+ * Mengembalikan teks balasan atau null bila belum dikonfigurasi/gagal — kegagalan AI
+ * tidak boleh membuat request chat pengunjung ikut gagal.
+ */
+async function callAiAgent(history: ChatMessage[], s: AgentSettings): Promise<string | null> {
+  if (!s.model || !s.base_url) return null;
+  const messages = [
+    { role: 'system', content: s.system_prompt },
+    ...history
+      .filter((m) => m.sender === 'visitor' || m.sender === 'admin' || m.sender === 'ai')
+      .map((m) => ({
+        role: m.sender === 'visitor' ? ('user' as const) : ('assistant' as const),
+        content: m.body,
+      })),
+  ];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (s.api_key) headers.Authorization = `Bearer ${s.api_key}`;
+    const res = await fetch(`${s.base_url.replace(/\/+$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers,
+      // Minta respons non-streaming secara eksplisit — sebagian gateway
+      // tetap membalas SSE bila field ini tidak dikirim.
+      body: JSON.stringify({ model: s.model, messages, temperature: 0.4, stream: false }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      // Simpan alasan gagal terakhir agar bisa ditampilkan di tombol "Test Koneksi"
+      agentLastError = `HTTP ${res.status}: ${(await res.text()).slice(0, 250)}`;
+      console.warn(`[chat-agent] 9Router ${agentLastError}`);
+      return null;
+    }
+
+    // Jangan langsung res.json(): beberapa gateway membalas dengan aliran SSE
+    // ('data: {"id"...\\n\\ndata: [DONE]'). Parse dua format di sini.
+    const raw = await res.text();
+    let content = '';
+
+    if (/^\s*data:/m.test(raw)) {
+      // Format SSE: gabungkan semua potongan delta.content menjadi satu teks
+      for (const line of raw.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const payload = trimmed.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        try {
+          const chunk = JSON.parse(payload);
+          content +=
+            String(
+              chunk?.choices?.[0]?.delta?.content ??
+                chunk?.choices?.[0]?.message?.content ??
+                '',
+            );
+        } catch {
+          /* lewati baris data yang tidak bisa diparse */
+        }
+      }
+    } else {
+      try {
+        const data = JSON.parse(raw);
+        content = String(data?.choices?.[0]?.message?.content ?? '');
+      } catch {
+        agentLastError = `Respons tidak dikenal dari gateway: ${raw.slice(0, 150)}`;
+        console.warn('[chat-agent]', agentLastError);
+        return null;
+      }
+    }
+
+    content = content.trim();
+    if (!content) {
+      agentLastError = 'Gateway merespons tanpa isi pesan';
+      console.warn('[chat-agent]', agentLastError);
+      return null;
+    }
+    agentLastError = null;
+    return content.slice(0, CHAT_BODY_MAX);
+  } catch (err: any) {
+    agentLastError =
+      err?.name === 'AbortError'
+        ? `timeout setelah ${AGENT_TIMEOUT_MS / 1000} detik`
+        : String(err?.cause?.code ?? err?.message ?? err);
+    console.warn('[chat-agent] Gagal memanggil 9Router:', agentLastError);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Alasan kegagalan panggilan AI terakhir — untuk diagnostik di halaman Pengaturan. */
+let agentLastError: string | null = null;
+
+/** Kirim/lanjutkan pesan dari pengunjung. Percakapan baru otomatis dibuat bila belum ada. */
+app.post('/api/chat/messages', async (req, res) => {
+  const d = loadDB();
+  const body = req.body ?? {};
+  const text = String(body.text ?? '').trim().slice(0, CHAT_BODY_MAX);
+  if (!text) return res.status(400).json({ error: 'Pesan tidak boleh kosong' });
+
+  let isNew = false;
+  let conversation = findChatByToken(d, body.visitor_token);
+  if (!conversation) {
+    isNew = true;
+    conversation = {
+      conversation_id: nextId('CHT', 'chat'),
+      visitor_token: String(body.visitor_token ?? '').trim() || randomUUID(),
+      visitor_name: String(body.name ?? '').trim().slice(0, 80),
+      visitor_email: String(body.email ?? '').trim().slice(0, 120),
+      page_url: String(body.page ?? '').trim().slice(0, 200) || null,
+      status: 'open',
+      // Percakapan baru dimulai dalam mode Agent (efektif bila fitur aktif secara global)
+      agent_active: true,
+      unread_for_admin: 0,
+      unread_for_visitor: 0,
+      messages: [],
+      created_at: now(),
+      updated_at: now(),
+    };
+    d.chats[conversation.conversation_id] = conversation;
+  }
+
+  // Perbarui identitas pengunjung bila dikirim ulang dari widget
+  if (body.name !== undefined) conversation.visitor_name = String(body.name).trim().slice(0, 80);
+  if (body.email !== undefined) conversation.visitor_email = String(body.email).trim().slice(0, 120);
+
+  // Pesan baru dari pengunjung membuka kembali percakapan yang sudah ditutup admin
+  if (conversation.status === 'closed') {
+    conversation.status = 'open';
+  }
+  conversation.messages.push({
+    message_id: randomUUID(),
+    sender: 'visitor',
+    body: text,
+    created_at: now(),
+  } satisfies ChatMessage);
+  conversation.unread_for_admin += 1;
+
+  // ---- Balasan otomatis: AI Agent (9Router) bila mode Agent aktif ----
+  let answeredByAi = false;
+  const agentCfg = getAgentSettings(d);
+  if (agentCfg.enabled && conversation.agent_active !== false && conversation.status === 'open') {
+    const aiReply = await callAiAgent(conversation.messages, agentCfg);
+    if (aiReply) {
+      conversation.messages.push({
+        message_id: randomUUID(),
+        sender: 'ai',
+        body: aiReply,
+        created_at: now(),
+      } satisfies ChatMessage);
+      answeredByAi = true;
+    }
+  }
+
+  // Sambutan singkat pada percakapan pertama bila belum dibalas oleh AI agent
+  if (isNew && !answeredByAi) {
+    conversation.messages.push({
+      message_id: randomUUID(),
+      sender: 'system',
+      body: 'Terima kasih telah menghubungi Smart Space! Pesan Anda sudah masuk ke tim kami dan akan dibalas pada jam kerja.',
+      created_at: now(),
+    } satisfies ChatMessage);
+  }
+
+  conversation.updated_at = now();
+  persist();
+  res.status(201).json({ conversation: chatDto(conversation) });
+});
+
+/** Ambil percakapan milik token pengunjung (tanpa menandai sebagai dibaca). */
+app.get('/api/chat/conversations/:token', (req, res) => {
+  const d = loadDB();
+  const conversation = findChatByToken(d, req.params.token);
+  if (!conversation) return res.status(404).json({ error: 'Belum ada percakapan' });
+  res.json({ conversation: chatDto(conversation) });
+});
+
+/** Tandai semua balasan admin sudah dibaca oleh pengunjung. */
+app.post('/api/chat/conversations/:token/read', (req, res) => {
+  const d = loadDB();
+  const conversation = findChatByToken(d, req.params.token);
+  if (!conversation) return res.status(404).json({ error: 'Belum ada percakapan' });
+  if (conversation.unread_for_visitor !== 0) {
+    conversation.unread_for_visitor = 0;
+    persist();
+  }
+  res.json({ ok: true, conversation: chatDto(conversation) });
 });
 
 // ------------------------------------------------------------------
@@ -903,6 +1143,157 @@ app.patch('/api/admin/requests/:id', (req, res) => {
   }
 
   res.json({ request, superseded_tickets: supersededTickets });
+});
+
+// ------------------------------------------------------------------
+// ADMIN: chat CRM — daftar & balas percakapan pengunjung
+// ------------------------------------------------------------------
+app.get('/api/admin/chats', (req: Request, res: Response) => {
+  const d = loadDB();
+  const status = req.query.status === 'open' || req.query.status === 'closed' ? req.query.status : null;
+  const chats = Object.values(d.chats)
+    .filter((c) => !status || c.status === status)
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    .map(chatDto);
+  res.json({ chats });
+});
+
+// Catatan: rute ini didaftarkan sebelum '/api/admin/chats/:id' agar tidak tertangkap param :id
+app.get('/api/admin/chats/unread-count', (_req: Request, res: Response) => {
+  const d = loadDB();
+  const chats = Object.values(d.chats);
+  res.json({
+    conversations: chats.filter((c) => c.unread_for_admin > 0 && c.status === 'open').length,
+    messages: chats.reduce((sum, c) => sum + c.unread_for_admin, 0),
+  });
+});
+
+app.get('/api/admin/chats/:id', (req: Request, res: Response) => {
+  const d = loadDB();
+  const conversation = d.chats[String(req.params.id)];
+  if (!conversation) return res.status(404).json({ error: 'Percakapan tidak ditemukan' });
+  if (conversation.unread_for_admin !== 0) {
+    conversation.unread_for_admin = 0;
+    persist();
+  }
+  res.json({ conversation: chatDto(conversation) });
+});
+
+app.post('/api/admin/chats/:id/reply', (req, res) => {
+  const d = loadDB();
+  const conversation = d.chats[String(req.params.id)];
+  if (!conversation) return res.status(404).json({ error: 'Percakapan tidak ditemukan' });
+  const text = String(req.body?.text ?? '').trim().slice(0, CHAT_BODY_MAX);
+  if (!text) return res.status(400).json({ error: 'Balasan tidak boleh kosong' });
+  // Admin membalas manual → AI agent berhenti membalas percakapan ini (mode jadi Manual)
+  conversation.agent_active = false;
+  conversation.messages.push({
+    message_id: randomUUID(),
+    sender: 'admin',
+    body: text,
+    created_at: now(),
+  } satisfies ChatMessage);
+  conversation.unread_for_visitor += 1;
+  conversation.updated_at = now();
+  persist();
+  res.status(201).json({ conversation: chatDto(conversation) });
+});
+
+app.patch('/api/admin/chats/:id', (req: Request, res: Response) => {
+  const d = loadDB();
+  const conversation = d.chats[String(req.params.id)];
+  if (!conversation) return res.status(404).json({ error: 'Percakapan tidak ditemukan' });
+  const status = req.body?.status as ChatConversation['status'];
+  if (status !== 'open' && status !== 'closed') {
+    return res.status(400).json({ error: "Status harus 'open' atau 'closed'" });
+  }
+  conversation.status = status;
+  conversation.updated_at = now();
+  persist();
+  res.json({ conversation: chatDto(conversation) });
+});
+
+app.delete('/api/admin/chats/:id', (req: Request, res: Response) => {
+  const d = loadDB();
+  const conversation = d.chats[String(req.params.id)];
+  if (!conversation) return res.status(404).json({ error: 'Percakapan tidak ditemukan' });
+  delete d.chats[String(req.params.id)];
+  persist();
+  res.json({ ok: true });
+});
+
+/** Switch mode Manual ↔ Agent untuk satu percakapan. */
+app.patch('/api/admin/chats/:id/agent', (req, res) => {
+  const d = loadDB();
+  const conversation = d.chats[String(req.params.id)];
+  if (!conversation) return res.status(404).json({ error: 'Percakapan tidak ditemukan' });
+  if (typeof req.body?.active !== 'boolean') {
+    return res.status(400).json({ error: "Field boolean 'active' wajib diisi" });
+  }
+  conversation.agent_active = req.body.active;
+  conversation.updated_at = now();
+  persist();
+  res.json({ conversation: chatDto(conversation) });
+});
+
+// ---------- ADMIN: pengaturan AI Agent (gateway 9Router, OpenAI-compatible) ----------
+app.get('/api/admin/agent-settings', (_req: Request, res: Response) => {
+  const d = loadDB();
+  res.json({ settings: agentSettingsView(getAgentSettings(d)) });
+});
+
+app.put('/api/admin/agent-settings', (req, res) => {
+  const d = loadDB();
+  const current = getAgentSettings(d);
+  // api_key hanya diperbarui bila dikirim non-empty; kirim clear_api_key=true untuk menghapus
+  const next: AgentSettings = {
+    enabled: typeof req.body?.enabled === 'boolean' ? req.body.enabled : current.enabled,
+    base_url:
+      typeof req.body?.base_url === 'string' && req.body.base_url.trim()
+        ? req.body.base_url.trim().slice(0, 300)
+        : current.base_url,
+    model: typeof req.body?.model === 'string' ? req.body.model.trim().slice(0, 120) : current.model,
+    system_prompt:
+      typeof req.body?.system_prompt === 'string'
+        ? req.body.system_prompt.trim().slice(0, 4000)
+        : current.system_prompt,
+    api_key:
+      req.body?.clear_api_key === true
+        ? ''
+        : typeof req.body?.api_key === 'string' && req.body.api_key.trim()
+          ? req.body.api_key.trim().slice(0, 300)
+          : current.api_key,
+  };
+  d.agentSettings = next;
+  persist();
+  res.json({
+    settings: agentSettingsView(next),
+    message:
+      next.enabled && !next.model
+        ? 'Tersimpan — isi nama model agar mode Agent berjalan'
+        : 'Pengaturan AI Agent tersimpan',
+  });
+});
+
+/** Uji koneksi ke gateway 9Router dengan satu prompt pendek. */
+app.post('/api/admin/agent-settings/test', async (_req: Request, res: Response) => {
+  const d = loadDB();
+  const settings = getAgentSettings(d);
+  if (!settings.base_url || !settings.model) {
+    return res.status(400).json({ ok: false, error: 'Base URL dan model harus diisi terlebih dahulu' });
+  }
+  const reply = await callAiAgent(
+    [{ message_id: 'test', sender: 'visitor', body: 'Balas hanya dengan satu kata: SIAP', created_at: now() }],
+    { ...settings, enabled: true },
+  );
+  if (!reply) {
+    return res.json({
+      ok: false,
+      error: 'Gateway gagal dipanggil',
+      detail: agentLastError ?? 'Base URL atau model belum lengkap',
+    });
+  }
+  res.json({ ok: true, reply });
 });
 
 // Statistik dashboard admin (perkiraan milestone 8)

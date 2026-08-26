@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
+  adminFetchAgentSettings,
   adminFetchNotificationSettings,
+  adminSaveAgentSettings,
   adminSaveNotificationSettings,
   adminSendTestNotificationEmail,
+  adminTestAgentSettings,
+  type SaveAgentSettingsPayload,
 } from '../../api.ts';
-import type { NotificationSettings } from '../../types.ts';
+import type { AgentSettingsView, NotificationSettings } from '../../types.ts';
 
 const inputCls =
   'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/10 bg-white';
@@ -22,12 +26,20 @@ export default function AdminSettingsPage() {
   const [testEmail, setTestEmail] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // ---- AI Agent (9Router) ----
+  const [agent, setAgent] = useState<AgentSettingsView | null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [savingAgent, setSavingAgent] = useState(false);
+  const [testingAgent, setTestingAgent] = useState(false);
+  const [agentMessage, setAgentMessage] = useState<string | null>(null);
+  const [agentError, setAgentError] = useState<string | null>(null);
 
   useEffect(() => {
-    adminFetchNotificationSettings()
-      .then((r) => {
-        setSettings(r.settings);
-        setSmtp(r.smtp);
+    void Promise.all([adminFetchNotificationSettings(), adminFetchAgentSettings()])
+      .then(([notif, agentRes]) => {
+        setSettings(notif.settings);
+        setSmtp(notif.smtp);
+        setAgent(agentRes.settings);
       })
       .catch((e: any) => setError(e.message ?? 'Gagal memuat pengaturan'))
       .finally(() => setLoading(false));
@@ -61,6 +73,48 @@ export default function AdminSettingsPage() {
       setError(e.message ?? 'Gagal mengirim email tes');
     } finally {
       setTesting(false);
+    }
+  };
+
+  /** Simpan pengaturan AI Agent — API key hanya dikirim bila user mengetik yang baru. */
+  const saveAgent = async () => {
+    if (!agent) return;
+    setSavingAgent(true);
+    setAgentMessage(null);
+    setAgentError(null);
+    try {
+      const newApiKey = apiKeyInput.trim();
+      const payload: SaveAgentSettingsPayload = {
+        enabled: agent.enabled,
+        base_url: agent.base_url.trim() || 'http://141.11.25.174:20128/v1',
+        model: agent.model.trim(),
+        system_prompt: agent.system_prompt,
+        ...(newApiKey ? { api_key: newApiKey } : {}),
+      };
+      const r = await adminSaveAgentSettings(payload);
+      setAgent(r.settings);
+      setApiKeyInput('');
+      setAgentMessage(r.message);
+    } catch (e: any) {
+      setAgentError(e.message ?? 'Gagal menyimpan pengaturan AI Agent');
+    } finally {
+      setSavingAgent(false);
+    }
+  };
+
+  /** Uji koneksi gateway 9Router dengan satu prompt pendek. */
+  const testAgent = async () => {
+    setTestingAgent(true);
+    setAgentMessage(null);
+    setAgentError(null);
+    try {
+      const r = await adminTestAgentSettings();
+      if (r.ok) setAgentMessage(`✅ Gateway merespons: “${r.reply}”`);
+      else setAgentError([r.error, r.detail].filter(Boolean).join(' — ') || 'Gateway tidak merespons');
+    } catch (e: any) {
+      setAgentError(e.message ?? 'Gagal menguji koneksi gateway');
+    } finally {
+      setTestingAgent(false);
     }
   };
 
@@ -201,6 +255,104 @@ export default function AdminSettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* ---------- AI AGENT — balasan chat otomatis via 9Router ---------- */}
+      {agent && (
+        <div className="mt-4 rounded-xl bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-slate-800">🤖 AI Agent — Balasan Chat Otomatis</h2>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Widget chat di balas otomatis oleh AI melalui gateway{' '}
+                <strong>9Router</strong> (endpoint OpenAI-compatible). Admin tetap bisa mengambil alih kapan saja dari
+                halaman Pesan Chat.
+              </p>
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={agent.enabled}
+                onChange={(e) => setAgent({ ...agent, enabled: e.target.checked })}
+                className="h-4 w-4 accent-blue-600"
+              />
+              Mode Agent aktif
+            </label>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Base URL Gateway</label>
+              <input
+                value={agent.base_url}
+                onChange={(e) => setAgent({ ...agent, base_url: e.target.value })}
+                placeholder="http://localhost:20128/v1"
+                className={inputCls}
+              />
+              <p className="mt-1 text-[11px] text-slate-400">Default 9Router lokal; boleh diganti gateway lain yang OpenAI-compatible.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Model</label>
+              <input
+                value={agent.model}
+                onChange={(e) => setAgent({ ...agent, model: e.target.value })}
+                placeholder="mis. claude-sonnet-4 / gpt-4o-mini / qwen-max"
+                className={inputCls}
+              />
+              <p className="mt-1 text-[11px] text-slate-400">Nama model sesuai provider yang terhubung di 9Router.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">API Key {agent.api_key_configured && <span className="text-[11px] font-normal text-emerald-600">(tersimpan)</span>}</label>
+              <input
+                type="password"
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                placeholder={agent.api_key_configured ? '•••••••• (kosongkan = tetap)' : 'opsional untuk gateway lokal'}
+                className={inputCls}
+              />
+              <p className="mt-1 text-[11px] text-slate-400">Ketik ulang hanya bila ingin mengganti key.</p>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-slate-700">System Prompt (karakter & batasan AI)</label>
+            <textarea
+              value={agent.system_prompt}
+              rows={4}
+              onChange={(e) => setAgent({ ...agent, system_prompt: e.target.value })}
+              className={`${inputCls} mt-1 resize-y`}
+            />
+          </div>
+
+          {agentError && <p className="mt-3 rounded-lg bg-red-50 p-2.5 text-sm text-red-600">{agentError}</p>}
+          {agentMessage && <p className="mt-3 rounded-lg bg-emerald-50 p-2.5 text-sm text-emerald-700">{agentMessage}</p>}
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              onClick={saveAgent}
+              disabled={savingAgent}
+              className="rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-light disabled:opacity-50"
+            >
+              {savingAgent ? 'Menyimpan…' : 'Simpan Pengaturan Agent'}
+            </button>
+            <button
+              onClick={testAgent}
+              disabled={testingAgent || !agent.base_url.trim() || !agent.model.trim()}
+              className="rounded-xl border border-brand px-4 py-2.5 text-sm font-semibold text-brand hover:bg-brand/5 disabled:opacity-50"
+            >
+              {testingAgent ? 'Menguji…' : '🔌 Test Koneksi Gateway'}
+            </button>
+          </div>
+
+          <div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
+            <p className="font-semibold text-slate-600">Cara kerja mode Agent:</p>
+            <ul className="mt-1 list-disc space-y-1 pl-4">
+              <li>Saat aktif, pesan pengunjung dibalas otomatis oleh AI dalam beberapa detik.</li>
+              <li>Begitu admin membalas manual, percakapan itu berpindah ke Mode Manual — AI berhenti membalasnya.</li>
+              <li>Dari halaman Pesan Chat, tiap percakapan bisa dialihkan Manual ↔ Agent lewat tombol switch.</li>
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

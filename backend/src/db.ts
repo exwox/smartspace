@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { DBShape, NotificationSettings, PublicContentSettings } from './types.js';
+import type { AgentSettings, DBShape, NotificationSettings, PublicContentSettings } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.SMARTSPACE_DATA_DIR
@@ -39,6 +39,20 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   notify_applicant: true,
 };
 
+/** Default gateway 9Router (OpenAI-compatible) yang dipakai deployment ini. */
+export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
+  enabled: false,
+  base_url: 'http://141.11.25.174:20128/v1',
+  api_key: '',
+  model: '',
+  system_prompt:
+    'Kamu adalah asisten virtual Smart Space, platform pemasaran dan pengelolaan ruangan komersial di ' +
+    'Bandar Udara Raja Haji Fisabilillah Tanjungpinang. Jawab dengan singkat, ramah, dan dalam Bahasa Indonesia. ' +
+    'Bantu menjawab pertanyaan seputar ketersediaan ruangan, harga sewa, fasilitas, dan cara mengajukan sewa ' +
+    'melalui situs ini (halaman Denah → pilih ruangan → Ajukan Sewa). Jika pertanyaan di luar pengetahuanmu atau ' +
+    'membutuhkan keputusan khusus, sarankan pengunjung menunggu balasan tim manusia pada jam kerja.',
+};
+
 function emptyDB(): DBShape {
   return {
     rooms: {},
@@ -46,9 +60,11 @@ function emptyDB(): DBShape {
     leases: {},
     requests: {},
     floorPlans: {},
+    chats: {},
     publicContent: { ...DEFAULT_PUBLIC_CONTENT },
     notifications: { ...DEFAULT_NOTIFICATION_SETTINGS },
-    counters: { room: 0, request: 0, ticket: 0, tenant: 0, lease: 0, floor: 0 },
+    agentSettings: { ...DEFAULT_AGENT_SETTINGS },
+    counters: { room: 0, request: 0, ticket: 0, tenant: 0, lease: 0, floor: 0, chat: 0 },
   };
 }
 
@@ -70,6 +86,24 @@ export function loadDB(): DBShape {
       cache = JSON.parse(raw) as DBShape;
       cache.publicContent = { ...DEFAULT_PUBLIC_CONTENT, ...(cache.publicContent ?? {}) };
       cache.notifications = { ...DEFAULT_NOTIFICATION_SETTINGS, ...(cache.notifications ?? {}) };
+      // Migrasi ringan untuk file data lama — pengaturan AI agent & koleksi chat
+      cache.agentSettings = { ...DEFAULT_AGENT_SETTINGS, ...(cache.agentSettings ?? {}) };
+      // Bawa URL lama (localhost) ke gateway terpusat yang baru
+      if (cache.agentSettings.base_url === 'http://localhost:20128/v1') {
+        cache.agentSettings.base_url = DEFAULT_AGENT_SETTINGS.base_url;
+      }
+      // Migrasi ringan untuk file data lama yang belum punya koleksi chat
+      cache.chats ??= {};
+      const counters = cache.counters ?? ({} as Partial<DBShape['counters']>);
+      cache.counters = {
+        room: counters.room ?? 0,
+        request: counters.request ?? 0,
+        ticket: counters.ticket ?? 0,
+        tenant: counters.tenant ?? 0,
+        lease: counters.lease ?? 0,
+        floor: counters.floor ?? 0,
+        chat: counters.chat ?? 0,
+      };
     } catch {
       cache = emptyDB();
     }

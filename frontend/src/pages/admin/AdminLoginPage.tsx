@@ -29,7 +29,9 @@ export default function AdminLoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-lg">
         <div className="flex items-center gap-2">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand text-xl text-white">🧭</span>
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white">
+            <img src="/brand/logo.svg" alt="Logo Smart Space" className="h-8 w-8" />
+          </span>
           <div>
             <h1 className="text-lg font-bold text-slate-900">Admin Smart Space</h1>
             <p className="text-xs text-slate-500">Masuk untuk mengelola peta &amp; pengajuan</p>

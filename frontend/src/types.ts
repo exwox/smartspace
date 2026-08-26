@@ -212,6 +212,43 @@ export interface SmtpSummary {
   secure: boolean;
 }
 
+/** Pengaturan AI Agent via gateway 9Router (OpenAI-compatible) — bentuk aman tanpa api_key. */
+export interface AgentSettingsView {
+  enabled: boolean;
+  base_url: string;
+  model: string;
+  system_prompt: string;
+  api_key_configured: boolean;
+}
+
+// ---------- Chat CRM (widget popup pojok kanan bawah) ----------
+export type ChatSender = 'visitor' | 'admin' | 'ai' | 'system';
+
+export interface ChatMessage {
+  message_id: string;
+  sender: ChatSender;
+  body: string;
+  created_at: string;
+}
+
+export interface ChatConversation {
+  conversation_id: string;
+  /** Token acak milik browser pengunjung (localStorage) — identitas tanpa login. */
+  visitor_token: string;
+  visitor_name: string;
+  visitor_email: string;
+  page_url: string | null;
+  status: 'open' | 'closed';
+  /** AI agent aktif membalas otomatis (false = admin ambil alih manual). */
+  agent_active?: boolean;
+  unread_for_admin: number;
+  unread_for_visitor: number;
+  messages: ChatMessage[];
+  created_at: string;
+  updated_at: string;
+  last_message?: ChatMessage | null;
+}
+
 // ---------- Helper geometri ruangan ----------
 export interface Bounds {
   minX: number;
