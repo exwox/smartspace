@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import MapCanvas from '../../components/MapCanvas.tsx';
-import { adminFetchRooms, adminSaveRoom, adminUploadFloor, fetchFloors } from '../../api.ts';
+import { adminFetchRooms, adminSaveRoom, adminUploadFloor, adminUploadRoomPhotos, fetchFloors } from '../../api.ts';
 import type { FloorPlan, Room } from '../../types.ts';
 import { resizedRectanglePoints } from '../../types.ts';
 
@@ -34,7 +34,17 @@ export default function AdminFloorPage() {
   const [formPanjang, setFormPanjang] = useState('');
   const [formLebar, setFormLebar] = useState('');
 
+  // Foto draft: file asli (untuk diupload setelah disimpan) + object URL (pratinjau di denah)
+  const [draftPhotos, setDraftPhotos] = useState<Record<string, File[]>>({});
+  const [draftPhotoUrls, setDraftPhotoUrls] = useState<Record<string, string[]>>({});
+
   const floorNames = useMemo(() => [...new Set(floors.map((f) => f.floor))], [floors]);
+
+  // Draft digabung dengan foto lokal (blob URL) agar pratinjau fotonya tampil di denah
+  const draftsForMap = useMemo(
+    () => drafts.map((d) => ({ ...d, photos: draftPhotoUrls[d.room_id] ?? d.photos })),
+    [drafts, draftPhotoUrls],
+  );
 
   const loadEditorData = useCallback(async () => {
     try {
@@ -151,8 +161,46 @@ export default function AdminFloorPage() {
     setDrafts((ds) => ds.map((d) => (d.room_id === selectedDraftId ? { ...d, ...patch } : d)));
   };
 
+  /** Lepas foto draft & cabut object URL-nya. */
+  const clearDraftPhotos = (id: string) => {
+    setDraftPhotos((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    setDraftPhotoUrls((current) => {
+      current[id]?.forEach((url) => URL.revokeObjectURL(url));
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const handleDraftPhotosPicked = (id: string, files: File[]) => {
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/bmp'];
+    const picked: File[] = [];
+    const urls: string[] = [];
+    for (const file of files) {
+      if ((draftPhotos[id]?.length ?? 0) + picked.length >= 5) break;
+      if (!allowedTypes.includes(file.type)) continue;
+      picked.push(file);
+      urls.push(URL.createObjectURL(file));
+    }
+    if (picked.length === 0) return;
+    setDraftPhotos((c) => ({ ...c, [id]: [...(c[id] ?? []), ...picked] }));
+    setDraftPhotoUrls((c) => ({ ...c, [id]: [...(c[id] ?? []), ...urls] }));
+  };
+
+  const removeDraftPhoto = (id: string, index: number) => {
+    const url = draftPhotoUrls[id]?.[index];
+    if (url) URL.revokeObjectURL(url);
+    setDraftPhotos((c) => ({ ...c, [id]: (c[id] ?? []).filter((_, i) => i !== index) }));
+    setDraftPhotoUrls((c) => ({ ...c, [id]: (c[id] ?? []).filter((_, i) => i !== index) }));
+  };
+
   const removeDraft = (id: string) => {
     setDrafts((ds) => ds.filter((d) => d.room_id !== id));
+    clearDraftPhotos(id);
     if (selectedDraftId === id) setSelectedDraftId(null);
   };
 
@@ -195,7 +243,7 @@ export default function AdminFloorPage() {
     setEditorError(null);
     setEditorMessage(null);
     try {
-      await adminSaveRoom({
+      const saved = await adminSaveRoom({
         room_code: formCode.trim() || selectedDraft.room_code,
         name: formName.trim() || formCode.trim() || selectedDraft.name,
         floor: selectedDraft.floor,
@@ -206,6 +254,12 @@ export default function AdminFloorPage() {
         geometry: selectedDraft.geometry,
         photos: [],
       });
+      // Upload foto lokasi draft ke ruangan yang baru tersimpan di server
+      const files = draftPhotos[selectedDraft.room_id];
+      if (files && files.length > 0) {
+        await adminUploadRoomPhotos(saved.room.room_id, files);
+      }
+      clearDraftPhotos(selectedDraft.room_id);
       setDrafts((ds) => ds.filter((d) => d.room_id !== selectedDraft.room_id));
       setSelectedDraftId(null);
       await loadEditorData();
@@ -295,7 +349,7 @@ export default function AdminFloorPage() {
               Di editor <span className="font-semibold">Buat Ruangan dengan Rectangle</span> di bawah, pilih lantai lalu
               aktifkan mode <span className="font-semibold">▭ Gambar Rectangle</span>.
             </li>
-            <li>Klik &amp; tarik di atas denah untuk membentuk ruangan, isi kode/nama/zona/harga, lalu simpan.</li>
+            <li>Klik &amp; tarik di atas denah untuk membentuk ruangan, isi kode/nama/zona/harga, tambahkan foto lokasi (opsional), lalu simpan.</li>
             <li>Ruangan langsung tampil di peta publik dengan status Kosong.</li>
           </ol>
 
@@ -367,7 +421,7 @@ export default function AdminFloorPage() {
                 activeFloorName={selectedFloor}
                 drawMode={drawMode}
                 onDrawRectangle={handleDrawRectangle}
-                draftRooms={drafts}
+                draftRooms={draftsForMap}
                 selectedDraftId={selectedDraftId}
                 onSelectDraft={(room) => setSelectedDraftId(room?.room_id ?? null)}
                 onDraftsChange={setDrafts}
@@ -392,6 +446,7 @@ export default function AdminFloorPage() {
                     <button
                       type="button"
                       onClick={() => {
+                        drafts.forEach((d) => clearDraftPhotos(d.room_id));
                         setDrafts([]);
                         setSelectedDraftId(null);
                       }}
@@ -532,6 +587,44 @@ export default function AdminFloorPage() {
                       Luas otomatis: {selectedDraft.size.luas_m2} m² · Lantai: {selectedDraft.floor} · geser
                       rectangle di denah untuk memindahkan.
                     </p>
+
+                    <div className="mt-3">
+                      <label className="block text-xs font-medium text-slate-600">
+                        Foto lokasi ruangan (opsional · maks 5)
+                      </label>
+                      <input
+                        type="file"
+                        accept=".png,.jpg,.jpeg,.webp,.bmp"
+                        multiple
+                        disabled={(draftPhotos[selectedDraft.room_id]?.length ?? 0) >= 5}
+                        onChange={(e) => {
+                          handleDraftPhotosPicked(selectedDraft.room_id, Array.from(e.target.files ?? []));
+                          e.target.value = '';
+                        }}
+                        className="mt-1 w-full rounded-lg border border-dashed border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-slate-200 file:px-2 file:py-1 file:text-xs file:font-medium hover:file:bg-slate-300 disabled:opacity-50"
+                      />
+                      {(draftPhotoUrls[selectedDraft.room_id]?.length ?? 0) > 0 && (
+                        <ul className="mt-1 space-y-0.5">
+                          {draftPhotoUrls[selectedDraft.room_id]!.map((url, i) => (
+                            <li key={url} className="flex items-center justify-between gap-2 rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+                              <span className="truncate">📷 {draftPhotos[selectedDraft.room_id]?.[i]?.name ?? `Foto ${i + 1}`}</span>
+                              <button
+                                type="button"
+                                aria-label={`Hapus foto ${i + 1}`}
+                                onClick={() => removeDraftPhoto(selectedDraft.room_id, i)}
+                                className="rounded px-1 font-semibold text-red-400 hover:bg-red-50 hover:text-red-600"
+                              >
+                                ✕
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Foto pertama tampil pada lokasi ruangan di denah & peta publik.
+                      </p>
+                    </div>
+
                     <button
                       type="button"
                       onClick={saveSelectedDraft}
