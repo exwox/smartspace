@@ -665,6 +665,7 @@ const normalizeRoomInput = (body: any, roomId: string) => {
     photos: Array.isArray(body.photos) ? body.photos : [],
     rented_logo: body.rented_logo ?? null,
     notes: String(body.notes ?? ''),
+    display_area_only: !!body.display_area_only,
   };
 };
 
@@ -737,6 +738,7 @@ function restoreRoomFromJson(raw: any, index: number, d: DBShape): Room {
     notes: typeof raw.notes === 'string' ? raw.notes.slice(0, 5000) : '',
     created_at: typeof raw.created_at === 'string' ? raw.created_at.slice(0, 100) : now(),
     updated_at: now(),
+    display_area_only: !!raw.display_area_only,
   };
 }
 
@@ -839,6 +841,7 @@ app.put('/api/admin/rooms/:id', (req, res) => {
   room.photos = input.photos;
   room.rented_logo = input.rented_logo;
   room.notes = input.notes;
+  room.display_area_only = input.display_area_only;
   room.status = newStatus;
   room.updated_at = now();
   persist();

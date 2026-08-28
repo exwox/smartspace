@@ -6,10 +6,9 @@ import { STATUS_LABEL, STATUS_COLOR, formatRupiah, formatDate, displayStatus, ca
 interface Props {
   room: Room | null;
   onClose: () => void;
-  hideDimensions?: boolean;
 }
 
-export default function RoomDetailPanel({ room, onClose, hideDimensions }: Props) {
+export default function RoomDetailPanel({ room, onClose }: Props) {
   const [activePhoto, setActivePhoto] = useState(0);
 
   useEffect(() => {
@@ -93,8 +92,8 @@ export default function RoomDetailPanel({ room, onClose, hideDimensions }: Props
       )}
 
       {/* ukuran */}
-      <div className={`mt-4 grid ${hideDimensions ? 'grid-cols-2' : 'grid-cols-3'} gap-2`}>
-        {!hideDimensions && (
+      <div className={`mt-4 grid ${room.display_area_only ? 'grid-cols-2' : 'grid-cols-3'} gap-2`}>
+        {!room.display_area_only && (
           <div className="rounded-lg bg-slate-50 p-2 text-center">
             <p className="text-[11px] text-slate-500">Ukuran (m)</p>
             <p className="text-sm font-semibold text-slate-800">

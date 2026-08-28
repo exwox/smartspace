@@ -20,6 +20,7 @@ export interface Room {
   notes: string;
   created_at: string;
   updated_at: string;
+  display_area_only?: boolean;
 }
 
 export interface Geometry {

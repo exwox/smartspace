@@ -45,6 +45,7 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
   const [sizePanjang, setSizePanjang] = useState(room ? String(room.size.panjang) : '');
   const [sizeLebar, setSizeLebar] = useState(room ? String(room.size.lebar) : '');
   const [sizeLuas, setSizeLuas] = useState(room ? String(room.size.luas_m2) : '');
+  const [displayAreaOnly, setDisplayAreaOnly] = useState(room?.display_area_only ?? false);
 
   const isRectGeometry =
     previewRoom?.geometry.type === 'rectangle' && (previewRoom.geometry.points?.length ?? 0) >= 8;
@@ -153,7 +154,8 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
           geometry,
           size: previewRoom?.size,
           photos: existingPhotos,
-          rented_logo: logoUrl
+          rented_logo: logoUrl,
+          display_area_only: displayAreaOnly
         },
         room?.room_id,
       );
@@ -255,6 +257,20 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
                     placeholder="Masukkan luas ruangan"
                   />
                 </Field>
+              )}
+              {previewRoom && (
+                <div className="flex items-center gap-2 py-1">
+                  <input
+                    type="checkbox"
+                    id="modal-display-area-only"
+                    checked={displayAreaOnly}
+                    onChange={(e) => setDisplayAreaOnly(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+                  />
+                  <label htmlFor="modal-display-area-only" className="text-xs font-medium text-slate-700 cursor-pointer select-none">
+                    Hanya Tampilkan Luas (Sembunyikan Panjang × Lebar)
+                  </label>
+                </div>
               )}
               <Field label="Catatan">
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className={inputCls} />

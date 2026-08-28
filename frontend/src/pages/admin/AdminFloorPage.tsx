@@ -35,6 +35,7 @@ export default function AdminFloorPage() {
   const [formPanjang, setFormPanjang] = useState('');
   const [formLebar, setFormLebar] = useState('');
   const [formLuas, setFormLuas] = useState('');
+  const [formDisplayAreaOnly, setFormDisplayAreaOnly] = useState(false);
 
   // Foto draft: file asli (untuk diupload setelah disimpan) + object URL (pratinjau di denah)
   const [draftPhotos, setDraftPhotos] = useState<Record<string, File[]>>({});
@@ -92,8 +93,9 @@ export default function AdminFloorPage() {
         const val = String(draft.size.luas_m2);
         return prev === '' || Math.abs(Number(prev) - draft.size.luas_m2) > 0.01 ? val : prev;
       });
+      setFormDisplayAreaOnly(draft.display_area_only ?? false);
     }
-  }, [selectedDraftId, selectedDraft?.size?.panjang, selectedDraft?.size?.lebar, selectedDraft?.size?.luas_m2]);
+  }, [selectedDraftId, selectedDraft?.size?.panjang, selectedDraft?.size?.lebar, selectedDraft?.size?.luas_m2, selectedDraft?.display_area_only]);
 
   const handleUpload = async () => {
     if (!file) return;
@@ -193,6 +195,7 @@ export default function AdminFloorPage() {
       current_lease_end: null,
       notes: '',
       history: null,
+      display_area_only: false,
     };
     setEditorMessage(null);
     setEditorError(null);
@@ -322,6 +325,7 @@ export default function AdminFloorPage() {
         geometry: selectedDraft.geometry,
         size: selectedDraft.size,
         photos: [],
+        display_area_only: selectedDraft.display_area_only,
       });
       // Upload foto lokasi draft ke ruangan yang baru tersimpan di server
       const files = draftPhotos[selectedDraft.room_id];
@@ -675,6 +679,21 @@ export default function AdminFloorPage() {
                           aria-label="Luas ruangan (m²)"
                           className="mt-1 w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/10"
                         />
+                      </div>
+                      <div className="col-span-2 flex items-center gap-2 py-1">
+                        <input
+                          type="checkbox"
+                          id="draft-display-area-only"
+                          checked={formDisplayAreaOnly}
+                          onChange={(e) => {
+                            setFormDisplayAreaOnly(e.target.checked);
+                            patchSelectedDraft({ display_area_only: e.target.checked });
+                          }}
+                          className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+                        />
+                        <label htmlFor="draft-display-area-only" className="text-xs font-medium text-slate-700 cursor-pointer select-none">
+                          Hanya Tampilkan Luas (Sembunyikan Panjang × Lebar)
+                        </label>
                       </div>
                     </div>
                     <p className="mt-2 text-xs text-slate-500">

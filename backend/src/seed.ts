@@ -71,6 +71,7 @@ export function seed() {
       notes: '',
       created_at: tNow,
       updated_at: tNow,
+      display_area_only: false,
     };
   };
 

@@ -46,6 +46,7 @@ export interface Room {
   active_lease?: Lease | null;
   /** Jumlah tiket pengajuan berstatus pending untuk ruangan ini (multi-tiket per ruangan) */
   pending_requests?: number;
+  display_area_only?: boolean;
 }
 
 export interface RentalRequest {
