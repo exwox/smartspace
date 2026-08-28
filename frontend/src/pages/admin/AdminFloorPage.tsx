@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import MapCanvas from '../../components/MapCanvas.tsx';
-import { adminFetchRooms, adminSaveRoom, adminUploadFloor, adminUploadRoomPhotos, fetchFloors } from '../../api.ts';
+import { adminFetchRooms, adminSaveRoom, adminUploadFloor, adminUploadRoomPhotos, fetchFloors, adminDeleteFloor } from '../../api.ts';
 import type { FloorPlan, Room } from '../../types.ts';
 import { resizedRectanglePoints } from '../../types.ts';
 
@@ -23,6 +23,7 @@ export default function AdminFloorPage() {
   const [drafts, setDrafts] = useState<Room[]>([]);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [deletingFloor, setDeletingFloor] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [editorMessage, setEditorMessage] = useState<string | null>(null);
 
@@ -33,6 +34,7 @@ export default function AdminFloorPage() {
   const [formPrice, setFormPrice] = useState('0');
   const [formPanjang, setFormPanjang] = useState('');
   const [formLebar, setFormLebar] = useState('');
+  const [formLuas, setFormLuas] = useState('');
 
   // Foto draft: file asli (untuk diupload setelah disimpan) + object URL (pratinjau di denah)
   const [draftPhotos, setDraftPhotos] = useState<Record<string, File[]>>({});
@@ -67,18 +69,31 @@ export default function AdminFloorPage() {
     if (!selectedFloor || !floorNames.includes(selectedFloor)) setSelectedFloor(floorNames[0]);
   }, [floorNames, selectedFloor]);
 
+  const selectedDraft = drafts.find((d) => d.room_id === selectedDraftId) ?? null;
+
   // Sinkronkan form saat pilihan draft berubah
   useEffect(() => {
-    const draft = drafts.find((d) => d.room_id === selectedDraftId);
+    const draft = selectedDraft;
     if (draft) {
-      setFormCode(draft.room_code);
-      setFormName(draft.name);
-      setFormZone(draft.zone);
-      setFormPrice(String(draft.price ?? 0));
-      setFormPanjang(String(draft.size.panjang));
-      setFormLebar(String(draft.size.lebar));
+      setFormCode((prev) => prev !== draft.room_code ? draft.room_code : prev);
+      setFormName((prev) => prev !== draft.name ? draft.name : prev);
+      setFormZone((prev) => prev !== draft.zone ? draft.zone : prev);
+      setFormPrice((prev) => Number(prev) !== draft.price ? String(draft.price) : prev);
+      
+      setFormPanjang((prev) => {
+        const val = String(draft.size.panjang);
+        return prev === '' || Math.abs(Number(prev) - draft.size.panjang) > 0.01 ? val : prev;
+      });
+      setFormLebar((prev) => {
+        const val = String(draft.size.lebar);
+        return prev === '' || Math.abs(Number(prev) - draft.size.lebar) > 0.01 ? val : prev;
+      });
+      setFormLuas((prev) => {
+        const val = String(draft.size.luas_m2);
+        return prev === '' || Math.abs(Number(prev) - draft.size.luas_m2) > 0.01 ? val : prev;
+      });
     }
-  }, [selectedDraftId]);
+  }, [selectedDraftId, selectedDraft?.size?.panjang, selectedDraft?.size?.lebar, selectedDraft?.size?.luas_m2]);
 
   const handleUpload = async () => {
     if (!file) return;
@@ -102,6 +117,36 @@ export default function AdminFloorPage() {
       setError(e.message ?? 'Upload gagal');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDeleteFloor = async () => {
+    const floorPlan = floors.find((f) => f.floor === selectedFloor);
+    if (!floorPlan) return;
+
+    const confirmMsg = `Apakah Anda yakin ingin menghapus denah "${floorPlan.floor}"?\n` +
+      `Semua ruangan, kontrak sewa, dan pengajuan sewa pada lantai/denah ini akan ikut dihapus secara permanen.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setDeletingFloor(true);
+    setEditorError(null);
+    setEditorMessage(null);
+    try {
+      const res = await adminDeleteFloor(floorPlan.floor_id);
+      setEditorMessage(res.message);
+      
+      // Reset state draft / draft selection jika sedang berada di lantai ini
+      setDrafts([]);
+      setSelectedDraftId(null);
+
+      // Muat ulang data
+      setSelectedFloor('');
+      await loadEditorData();
+    } catch (e: any) {
+      setEditorError(e.message ?? 'Gagal menghapus denah');
+    } finally {
+      setDeletingFloor(false);
     }
   };
 
@@ -155,8 +200,6 @@ export default function AdminFloorPage() {
     setSelectedDraftId(id);
   };
 
-  const selectedDraft = drafts.find((d) => d.room_id === selectedDraftId) ?? null;
-
   const patchSelectedDraft = (patch: Partial<Room>) => {
     setDrafts((ds) => ds.map((d) => (d.room_id === selectedDraftId ? { ...d, ...patch } : d)));
   };
@@ -205,7 +248,9 @@ export default function AdminFloorPage() {
   };
 
   // Ubah ukuran rectangle draft — geometry ikut di-resize, luas dihitung ulang otomatis
-  const applyDraftSize = (panjang: number, lebar: number) => {
+  const applyDraftSize = (panjang: number, lebar: number, luas?: number) => {
+    const computedLuas = luas !== undefined ? luas : panjang * lebar;
+    setFormLuas(String(round2(computedLuas)));
     setDrafts((ds) =>
       ds.map((d) => {
         if (d.room_id !== selectedDraftId || d.geometry.type !== 'rectangle') return d;
@@ -216,7 +261,7 @@ export default function AdminFloorPage() {
           size: {
             panjang: round2(panjang),
             lebar: round2(lebar),
-            luas_m2: round2(panjang * lebar),
+            luas_m2: round2(computedLuas),
           },
         };
       }),
@@ -227,14 +272,37 @@ export default function AdminFloorPage() {
     setFormPanjang(raw);
     const p = Number(raw);
     const l = Number(formLebar);
-    if (Number.isFinite(p) && p > 0 && l > 0) applyDraftSize(p, l);
+    if (Number.isFinite(p) && p > 0 && l > 0) {
+      applyDraftSize(p, l);
+    }
   };
 
   const handleDraftLebar = (raw: string) => {
     setFormLebar(raw);
     const l = Number(raw);
     const p = Number(formPanjang);
-    if (Number.isFinite(l) && l > 0 && p > 0) applyDraftSize(p, l);
+    if (Number.isFinite(l) && l > 0 && p > 0) {
+      applyDraftSize(p, l);
+    }
+  };
+
+  const handleDraftLuas = (raw: string) => {
+    setFormLuas(raw);
+    const val = Number(raw);
+    if (Number.isFinite(val) && val > 0) {
+      setDrafts((ds) =>
+        ds.map((d) => {
+          if (d.room_id !== selectedDraftId) return d;
+          return {
+            ...d,
+            size: {
+              ...d.size,
+              luas_m2: round2(val),
+            },
+          };
+        }),
+      );
+    }
   };
 
   const saveSelectedDraft = async () => {
@@ -252,6 +320,7 @@ export default function AdminFloorPage() {
         notes: '',
         status: 'kosong',
         geometry: selectedDraft.geometry,
+        size: selectedDraft.size,
         photos: [],
       });
       // Upload foto lokasi draft ke ruangan yang baru tersimpan di server
@@ -390,6 +459,17 @@ export default function AdminFloorPage() {
                 <option key={name} value={name}>{name}</option>
               ))}
             </select>
+            {selectedFloor && (
+              <button
+                type="button"
+                onClick={handleDeleteFloor}
+                disabled={deletingFloor}
+                className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 hover:border-red-400 transition disabled:opacity-50"
+                title="Hapus denah ini beserta semua ruangan di dalamnya"
+              >
+                {deletingFloor ? 'Menghapus...' : '🗑️ Hapus Denah'}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setDrawMode((v) => !v)}
@@ -564,7 +644,7 @@ export default function AdminFloorPage() {
                           value={formPanjang}
                           onChange={(e) => handleDraftPanjang(e.target.value)}
                           inputMode="decimal"
-                          min={1}
+                          min={0.1}
                           step="any"
                           aria-label="Panjang ruangan (m)"
                           className="mt-1 w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/10"
@@ -576,16 +656,27 @@ export default function AdminFloorPage() {
                           value={formLebar}
                           onChange={(e) => handleDraftLebar(e.target.value)}
                           inputMode="decimal"
-                          min={1}
+                          min={0.1}
                           step="any"
                           aria-label="Lebar ruangan (m)"
                           className="mt-1 w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/10"
                         />
                       </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs font-medium text-slate-600">Luas Ruangan (m²)</label>
+                        <input
+                          value={formLuas}
+                          onChange={(e) => handleDraftLuas(e.target.value)}
+                          inputMode="decimal"
+                          min={0.1}
+                          step="any"
+                          aria-label="Luas ruangan (m²)"
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/10"
+                        />
+                      </div>
                     </div>
                     <p className="mt-2 text-xs text-slate-500">
-                      Luas otomatis: {selectedDraft.size.luas_m2} m² · Lantai: {selectedDraft.floor} · geser
-                      rectangle di denah untuk memindahkan.
+                      Lantai: {selectedDraft.floor} · Geser/ubah ukuran rectangle di denah untuk memindahkan/mengubah default.
                     </p>
 
                     <div className="mt-3">

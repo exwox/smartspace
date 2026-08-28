@@ -44,31 +44,68 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
   // Ukuran bisa diedit langsung (geometry rectangle): mengubah panjang/lebar me-resize geometri
   const [sizePanjang, setSizePanjang] = useState(room ? String(room.size.panjang) : '');
   const [sizeLebar, setSizeLebar] = useState(room ? String(room.size.lebar) : '');
+  const [sizeLuas, setSizeLuas] = useState(room ? String(room.size.luas_m2) : '');
 
   const isRectGeometry =
     previewRoom?.geometry.type === 'rectangle' && (previewRoom.geometry.points?.length ?? 0) >= 8;
 
-  const applyRoomSize = (panjang: number, lebar: number) => {
+  const applyRoomSize = (panjang: number, lebar: number, luas?: number) => {
     setPreviewRoom((current) => {
       if (!current || current.geometry.type !== 'rectangle') return current;
       const points = resizedRectanglePoints(current.geometry.points, panjang, lebar);
       const p = Math.round(panjang * 100) / 100;
       const l = Math.round(lebar * 100) / 100;
+      const valLuas = luas !== undefined ? luas : Math.round(p * l * 100) / 100;
       return {
         ...current,
         geometry: { ...current.geometry, points },
-        size: { panjang: p, lebar: l, luas_m2: Math.round(p * l * 100) / 100 },
+        size: { panjang: p, lebar: l, luas_m2: Math.round(valLuas * 100) / 100 },
       };
     });
   };
 
-  const handleSizeInput = (raw: string, otherRaw: string, setSelf: (value: string) => void) => {
+  const handleSizeInput = (raw: string, otherRaw: string, setSelf: (value: string) => void, isPanjang: boolean) => {
     setSelf(raw);
-    const p = Number(raw);
-    const l = Number(otherRaw);
+    const p = isPanjang ? Number(raw) : Number(otherRaw);
+    const l = isPanjang ? Number(otherRaw) : Number(raw);
     if (!Number.isFinite(p) || !Number.isFinite(l) || p <= 0 || l <= 0) return;
-    applyRoomSize(p, l);
+    const computedLuas = Math.round(p * l * 100) / 100;
+    setSizeLuas(String(computedLuas));
+    applyRoomSize(p, l, computedLuas);
   };
+
+  const handleLuasInput = (raw: string) => {
+    setSizeLuas(raw);
+    const val = Number(raw);
+    if (!Number.isFinite(val) || val <= 0) return;
+    setPreviewRoom((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        size: {
+          ...current.size,
+          luas_m2: Math.round(val * 100) / 100,
+        },
+      };
+    });
+  };
+
+  useEffect(() => {
+    if (previewRoom?.size) {
+      setSizePanjang((prev) => {
+        const val = String(previewRoom.size.panjang);
+        return prev === '' || Math.abs(Number(prev) - previewRoom.size.panjang) > 0.01 ? val : prev;
+      });
+      setSizeLebar((prev) => {
+        const val = String(previewRoom.size.lebar);
+        return prev === '' || Math.abs(Number(prev) - previewRoom.size.lebar) > 0.01 ? val : prev;
+      });
+      setSizeLuas((prev) => {
+        const val = String(previewRoom.size.luas_m2);
+        return prev === '' || Math.abs(Number(prev) - previewRoom.size.luas_m2) > 0.01 ? val : prev;
+      });
+    }
+  }, [previewRoom?.size?.panjang, previewRoom?.size?.lebar, previewRoom?.size?.luas_m2]);
 
   const newPhotoPreviews = useMemo(
     () => newPhotos.map((file) => ({ file, url: URL.createObjectURL(file) })),
@@ -105,7 +142,19 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
       const geometry = previewRoom?.geometry ?? { type: 'rectangle' as const, points: [] as number[] };
       const logoUrl = deleteLogo ? null : (newLogo ? null : rentedLogo);
       const saved = await adminSaveRoom(
-        { room_code: code, name, floor, zone, price: Number(price) || 0, notes, status, geometry, photos: existingPhotos, rented_logo: logoUrl },
+        {
+          room_code: code,
+          name,
+          floor,
+          zone,
+          price: Number(price) || 0,
+          notes,
+          status,
+          geometry,
+          size: previewRoom?.size,
+          photos: existingPhotos,
+          rented_logo: logoUrl
+        },
         room?.room_id,
       );
       if (deleteLogo && room?.room_id) {
@@ -163,40 +212,50 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
                   </select>
                 </Field>
               )}
-              <Field label={isRectGeometry ? 'Ukuran Panjang × Lebar (m)' : 'Ukuran (terhitung otomatis)'}>
-                {previewRoom && isRectGeometry ? (
-                  <div className="mt-1 flex items-center gap-2">
+              {previewRoom && isRectGeometry && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Panjang (m)">
                     <input
                       value={sizePanjang}
-                      onChange={(e) => handleSizeInput(e.target.value, sizeLebar, setSizePanjang)}
+                      onChange={(e) => handleSizeInput(e.target.value, sizeLebar, setSizePanjang, true)}
                       type="number"
-                      min={1}
+                      min={0.1}
                       step="any"
-                      aria-label="Panjang ruangan (m)"
-                      className={`${inputCls} mt-0`}
+                      className={inputCls}
                     />
-                    <span className="text-slate-400">×</span>
+                  </Field>
+                  <Field label="Lebar (m)">
                     <input
                       value={sizeLebar}
-                      onChange={(e) => handleSizeInput(sizePanjang, e.target.value, setSizeLebar)}
+                      onChange={(e) => handleSizeInput(sizePanjang, e.target.value, setSizeLebar, false)}
                       type="number"
-                      min={1}
+                      min={0.1}
                       step="any"
-                      aria-label="Lebar ruangan (m)"
-                      className={`${inputCls} mt-0`}
+                      className={inputCls}
                     />
-                    <span className="whitespace-nowrap text-xs text-slate-500">
-                      = {previewRoom.size.luas_m2} m²
-                    </span>
-                  </div>
-                ) : (
+                  </Field>
+                </div>
+              )}
+              {previewRoom && !isRectGeometry && (
+                <Field label="Dimensi Panjang × Lebar (m, otomatis dari polygon)">
                   <p className={`${inputCls} text-slate-500`}>
-                    {previewRoom?.size
-                      ? `${previewRoom.size.panjang} × ${previewRoom.size.lebar} m · ${previewRoom.size.luas_m2} m² (otomatis dari polygon)`
-                      : 'Belum ada denah'}
+                    {previewRoom.size.panjang} × {previewRoom.size.lebar} m
                   </p>
-                )}
-              </Field>
+                </Field>
+              )}
+              {previewRoom && (
+                <Field label="Luas Ruangan (m²)">
+                  <input
+                    value={sizeLuas}
+                    onChange={(e) => handleLuasInput(e.target.value)}
+                    type="number"
+                    min={0.1}
+                    step="any"
+                    className={inputCls}
+                    placeholder="Masukkan luas ruangan"
+                  />
+                </Field>
+              )}
               <Field label="Catatan">
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className={inputCls} />
               </Field>

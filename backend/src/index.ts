@@ -632,9 +632,24 @@ app.post('/api/admin/notification-settings/test', async (req: Request, res: Resp
 const normalizeRoomInput = (body: any, roomId: string) => {
   const geometry = body.geometry ?? { type: 'rectangle' as const, points: [] as number[] };
   const bb = boundingBox(geometry.points);
-  const luas = geometry.type === 'polygon'
+  
+  const defaultPanjang = round2(Math.abs(bb.maxX - bb.minX));
+  const defaultLebar = round2(Math.abs(bb.maxY - bb.minY));
+  const defaultLuas = geometry.type === 'polygon'
     ? polygonArea(geometry.points)
-    : (bb.maxX - bb.minX) * (bb.maxY - bb.minY);
+    : defaultPanjang * defaultLebar;
+
+  const inputSize = body.size || {};
+  const panjang = inputSize.panjang !== undefined && inputSize.panjang !== null && !isNaN(Number(inputSize.panjang))
+    ? round2(Number(inputSize.panjang))
+    : defaultPanjang;
+  const lebar = inputSize.lebar !== undefined && inputSize.lebar !== null && !isNaN(Number(inputSize.lebar))
+    ? round2(Number(inputSize.lebar))
+    : defaultLebar;
+  const luas_m2 = inputSize.luas_m2 !== undefined && inputSize.luas_m2 !== null && !isNaN(Number(inputSize.luas_m2))
+    ? round2(Number(inputSize.luas_m2))
+    : round2(defaultLuas);
+
   return {
     room_code: String(body.room_code ?? roomId).trim(),
     name: String(body.name ?? 'Ruangan Baru').trim(),
@@ -642,9 +657,9 @@ const normalizeRoomInput = (body: any, roomId: string) => {
     zone: String(body.zone ?? 'Zona A').trim(),
     geometry,
     size: {
-      panjang: round2(Math.abs(bb.maxX - bb.minX)),
-      lebar: round2(Math.abs(bb.maxY - bb.minY)),
-      luas_m2: round2(luas),
+      panjang,
+      lebar,
+      luas_m2,
     },
     price: Number(body.price ?? 0),
     photos: Array.isArray(body.photos) ? body.photos : [],
@@ -921,6 +936,66 @@ app.delete('/api/admin/rooms/:id', (req, res) => {
   persist();
   deleteUploadedFiles(room.photos ?? []);
   res.json({ ok: true });
+});
+
+app.delete('/api/admin/floor/:id', (req, res) => {
+  const d = loadDB();
+  const floorId = String(req.params.id);
+  const floorPlan = d.floorPlans[floorId];
+  if (!floorPlan) return res.status(404).json({ error: 'Denah tidak ditemukan' });
+
+  const floorName = floorPlan.floor;
+  const roomsToDelete = Object.values(d.rooms).filter((r) => r.floor === floorName);
+  const roomIdsToDelete = roomsToDelete.map((r) => r.room_id);
+
+  const filesToDelete: string[] = [];
+  if (floorPlan.file_url) filesToDelete.push(floorPlan.file_url);
+  if (floorPlan.background_url) filesToDelete.push(floorPlan.background_url);
+
+  roomsToDelete.forEach((room) => {
+    if (room.photos) filesToDelete.push(...room.photos);
+    if (room.rented_logo) filesToDelete.push(room.rented_logo);
+  });
+
+  const leasesDeleted = Object.values(d.leases).filter((l) => roomIdsToDelete.includes(l.room_id)).length;
+  d.leases = Object.fromEntries(
+    Object.entries(d.leases).filter(([, l]) => !roomIdsToDelete.includes(l.room_id))
+  );
+
+  const requestsDeleted = Object.values(d.requests).filter((r) => roomIdsToDelete.includes(r.room_id)).length;
+  
+  const requestAttachments: string[] = [];
+  Object.values(d.requests).forEach((r) => {
+    if (roomIdsToDelete.includes(r.room_id) && r.attachments) {
+      requestAttachments.push(...r.attachments);
+    }
+  });
+
+  d.requests = Object.fromEntries(
+    Object.entries(d.requests).filter(([, r]) => !roomIdsToDelete.includes(r.room_id))
+  );
+
+  roomIdsToDelete.forEach((rid) => {
+    delete d.rooms[rid];
+  });
+
+  delete d.floorPlans[floorId];
+
+  persist();
+
+  // Clear physical files from disk
+  const uniqueFiles = Array.from(new Set([...filesToDelete, ...requestAttachments])).filter(Boolean) as string[];
+  deleteUploadedFiles(uniqueFiles);
+
+  res.json({
+    ok: true,
+    deleted: {
+      rooms: roomIdsToDelete.length,
+      leases: leasesDeleted,
+      requests: requestsDeleted,
+    },
+    message: `Denah "${floorName}" berhasil dihapus beserta ${roomIdsToDelete.length} ruangan, ${leasesDeleted} sewa, dan ${requestsDeleted} pengajuan terkait.`,
+  });
 });
 
 // Hapus SEMUA data ruang komersial: ruangan, tenant/brand, lease,

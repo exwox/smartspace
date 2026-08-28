@@ -178,6 +178,18 @@ export async function adminDeleteAllRooms() {
   }>(res);
 }
 
+export async function adminDeleteFloor(id: string) {
+  const res = await fetch(`${BASE}/api/admin/floor/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return handle<{
+    ok: boolean;
+    deleted: { rooms: number; leases: number; requests: number };
+    message: string;
+  }>(res);
+}
+
 export async function adminUploadFloor(formData: FormData) {
   const res = await fetch(`${BASE}/api/admin/floor`, {
     method: 'POST',
