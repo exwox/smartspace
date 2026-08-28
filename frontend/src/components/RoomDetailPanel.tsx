@@ -6,9 +6,10 @@ import { STATUS_LABEL, STATUS_COLOR, formatRupiah, formatDate, displayStatus, ca
 interface Props {
   room: Room | null;
   onClose: () => void;
+  hideDimensions?: boolean;
 }
 
-export default function RoomDetailPanel({ room, onClose }: Props) {
+export default function RoomDetailPanel({ room, onClose, hideDimensions }: Props) {
   const [activePhoto, setActivePhoto] = useState(0);
 
   useEffect(() => {
@@ -92,13 +93,15 @@ export default function RoomDetailPanel({ room, onClose }: Props) {
       )}
 
       {/* ukuran */}
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <div className="rounded-lg bg-slate-50 p-2 text-center">
-          <p className="text-[11px] text-slate-500">Ukuran (m)</p>
-          <p className="text-sm font-semibold text-slate-800">
-            {room.size.panjang === 0 || room.size.lebar === 0 ? 'N/A' : `${room.size.panjang} × ${room.size.lebar}`}
-          </p>
-        </div>
+      <div className={`mt-4 grid ${hideDimensions ? 'grid-cols-2' : 'grid-cols-3'} gap-2`}>
+        {!hideDimensions && (
+          <div className="rounded-lg bg-slate-50 p-2 text-center">
+            <p className="text-[11px] text-slate-500">Ukuran (m)</p>
+            <p className="text-sm font-semibold text-slate-800">
+              {room.size.panjang === 0 || room.size.lebar === 0 ? 'N/A' : `${room.size.panjang} × ${room.size.lebar}`}
+            </p>
+          </div>
+        )}
         <div className="rounded-lg bg-slate-50 p-2 text-center">
           <p className="text-[11px] text-slate-500">Luas</p>
           <p className="text-sm font-semibold text-slate-800">

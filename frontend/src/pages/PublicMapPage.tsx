@@ -15,6 +15,17 @@ export default function PublicMapPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [mobileSheet, setMobileSheet] = useState(false);
+  const [hideDimensions, setHideDimensions] = useState(() => {
+    return localStorage.getItem('ss_hide_dimensions') === 'true';
+  });
+
+  const toggleHideDimensions = () => {
+    setHideDimensions((prev) => {
+      const next = !prev;
+      localStorage.setItem('ss_hide_dimensions', String(next));
+      return next;
+    });
+  };
 
   const reload = useCallback(async () => {
     const [r, f] = await Promise.all([fetchRooms(), fetchFloors()]);
@@ -138,12 +149,21 @@ return (
               placeholder="Cari kode/nama…"
               className="w-28 rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 outline-none sm:w-36"
             />
+            <label className="flex items-center gap-1.5 pl-1 text-xs font-medium text-slate-600 select-none cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hideDimensions}
+                onChange={toggleHideDimensions}
+                className="rounded border-slate-300 text-brand focus:ring-brand"
+              />
+              <span>Hanya Luas</span>
+            </label>
           </div>
         </div>
 
         {/* desktop: side panel */}
         <aside className="hidden w-80 shrink-0 border-l border-slate-200 bg-white md:block lg:w-96">
-          <RoomDetailPanel room={selected} onClose={() => setSelected(null)} />
+          <RoomDetailPanel room={selected} onClose={() => setSelected(null)} hideDimensions={hideDimensions} />
         </aside>
       </div>
 
@@ -153,7 +173,7 @@ return (
           <div className="absolute inset-0 bg-black/30" onClick={() => setMobileSheet(false)} />
           <div className="thin-scroll absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl bg-white shadow-xl">
             <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-slate-300" />
-            <RoomDetailPanel room={selected} onClose={() => setMobileSheet(false)} />
+            <RoomDetailPanel room={selected} onClose={() => setMobileSheet(false)} hideDimensions={hideDimensions} />
           </div>
         </div>
       )}
