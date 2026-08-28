@@ -556,7 +556,9 @@ export default function AdminFloorPage() {
                         }`}
                       >
                         <span>{draft.room_code}</span>
-                        <span className="font-normal text-slate-400">{draft.size.luas_m2} m²</span>
+                        <span className="font-normal text-slate-400">
+                          {draft.size.luas_m2 === 0 ? 'N/A' : `${draft.size.luas_m2} m²`}
+                        </span>
                         <span
                           role="button"
                           tabIndex={0}

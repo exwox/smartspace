@@ -34,7 +34,7 @@ export default function FormView({
             <div>
               <h1 className="text-xl font-bold text-slate-900">{room.name}</h1>
               <p className="text-sm text-slate-500">
-                {room.room_code} · {room.floor} · {room.zone} · {room.size.luas_m2} m²
+                {room.room_code} · {room.floor} · {room.zone} · {room.size.luas_m2 === 0 ? 'N/A' : `${room.size.luas_m2} m²`}
               </p>
             </div>
             <p className="text-sm font-semibold text-emerald-600">{formatRupiah(room.price)}</p>

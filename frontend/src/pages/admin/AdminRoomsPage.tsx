@@ -198,12 +198,12 @@ export default function AdminRoomsPage() {
                 </p>
               </div>
               <span className="shrink-0 rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
-                {room.size.luas_m2} m²
+                {room.size.luas_m2 === 0 ? 'N/A' : `${room.size.luas_m2} m²`}
               </span>
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
-              <p>Ukuran: {room.size.panjang} × {room.size.lebar} m</p>
+              <p>Ukuran: {room.size.panjang === 0 || room.size.lebar === 0 ? 'N/A' : `${room.size.panjang} × ${room.size.lebar} m`}</p>
               <p className="text-right">{formatRupiah(room.price)}</p>
             </div>
             {room.current_tenant && (

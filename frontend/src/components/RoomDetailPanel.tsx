@@ -96,12 +96,14 @@ export default function RoomDetailPanel({ room, onClose }: Props) {
         <div className="rounded-lg bg-slate-50 p-2 text-center">
           <p className="text-[11px] text-slate-500">Ukuran (m)</p>
           <p className="text-sm font-semibold text-slate-800">
-            {room.size.panjang} × {room.size.lebar}
+            {room.size.panjang === 0 || room.size.lebar === 0 ? 'N/A' : `${room.size.panjang} × ${room.size.lebar}`}
           </p>
         </div>
         <div className="rounded-lg bg-slate-50 p-2 text-center">
           <p className="text-[11px] text-slate-500">Luas</p>
-          <p className="text-sm font-semibold text-slate-800">{room.size.luas_m2} m²</p>
+          <p className="text-sm font-semibold text-slate-800">
+            {room.size.luas_m2 === 0 ? 'N/A' : `${room.size.luas_m2} m²`}
+          </p>
         </div>
         <div className="rounded-lg bg-slate-50 p-2 text-center">
           <p className="text-[11px] text-slate-500">Harga</p>
