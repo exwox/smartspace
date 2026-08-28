@@ -648,6 +648,7 @@ const normalizeRoomInput = (body: any, roomId: string) => {
     },
     price: Number(body.price ?? 0),
     photos: Array.isArray(body.photos) ? body.photos : [],
+    rented_logo: body.rented_logo ?? null,
     notes: String(body.notes ?? ''),
   };
 };
@@ -686,6 +687,7 @@ function restoreRoomFromJson(raw: any, index: number, d: DBShape): Room {
   if (!Number.isFinite(price) || price < 0) throw new Error(`Harga ruangan ${roomId} tidak valid`);
   const status: RoomStatus = ['kosong', 'terisi', 'proses'].includes(raw.status) ? raw.status : 'kosong';
   const tenantId = nullableText(raw.current_tenant_id);
+  const rentedLogo = typeof raw.rented_logo === 'string' && raw.rented_logo.startsWith('/uploads/') ? raw.rented_logo : null;
   const photos = Array.isArray(raw.photos)
     ? raw.photos.filter((photo: unknown): photo is string => {
         if (typeof photo !== 'string' || !photo.startsWith('/uploads/')) return false;
@@ -712,6 +714,7 @@ function restoreRoomFromJson(raw: any, index: number, d: DBShape): Room {
     },
     price,
     photos,
+    rented_logo: rentedLogo,
     status,
     current_tenant_id: tenantId && d.tenants[tenantId] ? tenantId : null,
     current_lease_start: nullableText(raw.current_lease_start),
@@ -810,6 +813,7 @@ app.put('/api/admin/rooms/:id', (req, res) => {
   const input = normalizeRoomInput(req.body, room.room_id);
   const newStatus = (req.body.status as RoomStatus | undefined) ?? room.status;
   const previousPhotos = room.photos ?? [];
+  const previousLogo = room.rented_logo;
   room.room_code = input.room_code;
   room.name = input.name;
   room.floor = input.floor;
@@ -818,11 +822,15 @@ app.put('/api/admin/rooms/:id', (req, res) => {
   room.size = input.size;
   room.price = input.price;
   room.photos = input.photos;
+  room.rented_logo = input.rented_logo;
   room.notes = input.notes;
   room.status = newStatus;
   room.updated_at = now();
   persist();
   deleteUploadedFiles(previousPhotos.filter((photo) => !room.photos.includes(photo)));
+  if (previousLogo && previousLogo !== room.rented_logo) {
+    deleteUploadedFiles([previousLogo]);
+  }
   res.json({ room: roomDto(d, room) });
 });
 
@@ -850,6 +858,45 @@ app.post('/api/admin/rooms/:id/photos', roomPhotoUpload.array('photos', 5), (req
   room.updated_at = now();
   persist();
   res.status(201).json({ room: roomDto(d, room) });
+});
+
+app.post('/api/admin/rooms/:id/logo', roomPhotoUpload.single('logo'), (req, res) => {
+  const d = loadDB();
+  const file = req.file;
+  const room = d.rooms[String(req.params.id)];
+  if (!room) {
+    if (file) deleteUploadedFiles([`/uploads/${file.filename}`]);
+    return res.status(404).json({ error: 'Ruangan tidak ditemukan' });
+  }
+  if (!file) return res.status(400).json({ error: 'Pilih file logo/ikon sewa' });
+  if (!hasValidRoomPhotoSignature(file)) {
+    deleteUploadedFiles([`/uploads/${file.filename}`]);
+    return res.status(400).json({ error: 'Isi file tidak cocok dengan format foto yang didukung' });
+  }
+
+  const previousLogo = room.rented_logo;
+  room.rented_logo = `/uploads/${file.filename}`;
+  room.updated_at = now();
+  persist();
+  if (previousLogo) {
+    deleteUploadedFiles([previousLogo]);
+  }
+  res.status(201).json({ room: roomDto(d, room) });
+});
+
+app.delete('/api/admin/rooms/:id/logo', (req, res) => {
+  const d = loadDB();
+  const room = d.rooms[String(req.params.id)];
+  if (!room) return res.status(404).json({ error: 'Ruangan tidak ditemukan' });
+
+  const previousLogo = room.rented_logo;
+  room.rented_logo = null;
+  room.updated_at = now();
+  persist();
+  if (previousLogo) {
+    deleteUploadedFiles([previousLogo]);
+  }
+  res.json({ room: roomDto(d, room) });
 });
 
 app.patch('/api/admin/rooms/:id/status', (req, res) => {

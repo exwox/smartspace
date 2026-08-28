@@ -112,14 +112,23 @@ export default function RoomDetailPanel({ room, onClose }: Props) {
       {/* tenant aktif */}
       {room.current_tenant && room.active_lease && (
         <div className="mt-4 rounded-lg border border-red-100 bg-red-50/60 p-3">
-          <p className="text-xs font-semibold text-red-700">Sedang terisi oleh</p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-800">{room.current_tenant.brand_name}</p>
-          <p className="mt-0.5 text-xs text-slate-600">
-            {formatDate(room.active_lease.start_date)} – {formatDate(room.active_lease.end_date)}
-          </p>
-          {room.active_lease.tenant && (
-            <p className="mt-1 text-xs text-slate-500">PIC: {room.active_lease.tenant.pic_name}</p>
-          )}
+          <div className="flex gap-3 items-center">
+            {room.rented_logo && (
+              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-1">
+                <img src={room.rented_logo} alt="Logo penyewa" className="h-full w-full object-contain" />
+              </div>
+            )}
+            <div>
+              <p className="text-xs font-semibold text-red-700">Sedang terisi oleh</p>
+              <p className="mt-0.5 text-sm font-semibold text-slate-800">{room.current_tenant.brand_name}</p>
+              <p className="mt-0.5 text-xs text-slate-600">
+                {formatDate(room.active_lease.start_date)} – {formatDate(room.active_lease.end_date)}
+              </p>
+              {room.active_lease.tenant && (
+                <p className="mt-1 text-xs text-slate-500">PIC: {room.active_lease.tenant.pic_name}</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

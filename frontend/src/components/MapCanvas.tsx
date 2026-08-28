@@ -64,6 +64,12 @@ function useHtmlImage(src?: string | null) {
   return image;
 }
 
+function RoomLogoImage({ src, x, y, width, height }: { src: string; x: number; y: number; width: number; height: number }) {
+  const image = useHtmlImage(src);
+  if (!image) return null;
+  return <KonvaImage image={image} x={x} y={y} width={width} height={height} />;
+}
+
 export default function MapCanvas({
   rooms,
   floors,
@@ -345,7 +351,21 @@ export default function MapCanvas({
     ));
     const labelGap = Math.max(0.5, Math.min(2, roomHeight * 0.025));
     const labelHeight = codeFontSize + statusFontSize + labelGap;
-    const labelTop = b.y - labelHeight / 2;
+    let labelTop = b.y - labelHeight / 2;
+    let logoX = 0;
+    let logoY = 0;
+    let logoSize = 0;
+    const hasLogo = !isDraft && !!room.rented_logo;
+
+    if (hasLogo) {
+      logoSize = Math.max(8, Math.min(roomWidth * 0.5, roomHeight * 0.5));
+      const totalHeight = codeFontSize + labelGap + logoSize;
+      const startY = b.y - totalHeight / 2;
+      labelTop = startY;
+      logoX = b.x - logoSize / 2;
+      logoY = startY + codeFontSize + labelGap;
+    }
+
     return (
       <Group
         key={room.room_id}
@@ -384,9 +404,13 @@ export default function MapCanvas({
           <Text x={b.minX} y={labelTop} width={roomWidth} height={codeFontSize}
             text={room.room_code} fontSize={codeFontSize} fontStyle="bold" fill="#1e293b"
             align="center" verticalAlign="middle" ellipsis wrap="none" />
-          <Text x={b.minX} y={labelTop + codeFontSize + labelGap} width={roomWidth} height={statusFontSize}
-            text={statusText} fontSize={statusFontSize} fill="#334155"
-            align="center" verticalAlign="middle" ellipsis wrap="none" />
+          {hasLogo && room.rented_logo ? (
+            <RoomLogoImage src={room.rented_logo} x={logoX} y={logoY} width={logoSize} height={logoSize} />
+          ) : (
+            <Text x={b.minX} y={labelTop + codeFontSize + labelGap} width={roomWidth} height={statusFontSize}
+              text={statusText} fontSize={statusFontSize} fill="#334155"
+              align="center" verticalAlign="middle" ellipsis wrap="none" />
+          )}
         </Group>
       </Group>
     );

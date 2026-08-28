@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import MapCanvas from './MapCanvas.tsx';
-import { adminSaveRoom, adminUploadRoomPhotos, fetchFloors } from '../api.ts';
+import { adminSaveRoom, adminUploadRoomPhotos, adminUploadRoomLogo, adminDeleteRoomLogo, fetchFloors } from '../api.ts';
 import type { Room, FloorPlan } from '../types.ts';
 import { resizedRectanglePoints } from '../types.ts';
 
@@ -37,6 +37,9 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
   const [previewRoom, setPreviewRoom] = useState<Room | null>(room);
   const [existingPhotos, setExistingPhotos] = useState<string[]>(room?.photos ?? []);
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
+  const [rentedLogo, setRentedLogo] = useState<string | null>(room?.rented_logo ?? null);
+  const [newLogo, setNewLogo] = useState<File | null>(null);
+  const [deleteLogo, setDeleteLogo] = useState(false);
 
   // Ukuran bisa diedit langsung (geometry rectangle): mengubah panjang/lebar me-resize geometri
   const [sizePanjang, setSizePanjang] = useState(room ? String(room.size.panjang) : '');
@@ -77,6 +80,21 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
   }, [newPhotoPreviews]);
 
   useEffect(() => {
+    return () => {
+      if (rentedLogo && rentedLogo.startsWith('blob:')) {
+        URL.revokeObjectURL(rentedLogo);
+      }
+    };
+  }, [rentedLogo]);
+
+  useEffect(() => {
+    setPreviewRoom((current) => {
+      if (!current) return current;
+      return { ...current, rented_logo: rentedLogo };
+    });
+  }, [rentedLogo]);
+
+  useEffect(() => {
     fetchFloors().then((r) => setFloors(r.floors)).catch(() => {});
   }, []);
 
@@ -85,10 +103,17 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
     setSaveError(null);
     try {
       const geometry = previewRoom?.geometry ?? { type: 'rectangle' as const, points: [] as number[] };
+      const logoUrl = deleteLogo ? null : (newLogo ? null : rentedLogo);
       const saved = await adminSaveRoom(
-        { room_code: code, name, floor, zone, price: Number(price) || 0, notes, status, geometry, photos: existingPhotos },
+        { room_code: code, name, floor, zone, price: Number(price) || 0, notes, status, geometry, photos: existingPhotos, rented_logo: logoUrl },
         room?.room_id,
       );
+      if (deleteLogo && room?.room_id) {
+        await adminDeleteRoomLogo(room.room_id);
+      }
+      if (newLogo) {
+        await adminUploadRoomLogo(saved.room.room_id, newLogo);
+      }
       if (newPhotos.length > 0) {
         await adminUploadRoomPhotos(saved.room.room_id, newPhotos);
       }
@@ -190,6 +215,42 @@ export default function RoomFormModal({ room, onClose, onSaved }: Props) {
                   className="mt-1 w-full rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-slate-200 file:px-2 file:py-1 file:text-xs file:font-medium"
                 />
                 <p className="mt-1 text-xs text-slate-400">PNG, JPG, WEBP, atau BMP · maksimal 5 MB per foto.</p>
+              </Field>
+              <Field label="Logo / Ikon Ruangan Tersewa (Tampil di map)">
+                <div className="mt-1 flex items-center gap-3">
+                  {rentedLogo ? (
+                    <div className="relative h-12 w-12 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                      <img src={rentedLogo} alt="Logo penyewa" className="h-full w-full object-contain p-1" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRentedLogo(null);
+                          setNewLogo(null);
+                          setDeleteLogo(true);
+                        }}
+                        className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-bl bg-black/65 text-[9px] text-white hover:bg-red-600"
+                        title="Hapus logo"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <input
+                      type="file"
+                      accept=".png,.jpg,.jpeg,.webp,.bmp"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setNewLogo(file);
+                          setRentedLogo(URL.createObjectURL(file));
+                          setDeleteLogo(false);
+                        }
+                      }}
+                      className="w-full rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-slate-200 file:px-2 file:py-1 file:text-xs file:font-medium"
+                    />
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-slate-400">PNG, JPG, WEBP, atau BMP · maksimal 5 MB.</p>
               </Field>
             </div>
             <div>

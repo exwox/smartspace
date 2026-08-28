@@ -129,6 +129,25 @@ export async function adminUploadRoomPhotos(id: string, photos: File[]) {
   return handle<{ room: Room }>(res);
 }
 
+export async function adminUploadRoomLogo(id: string, logo: File) {
+  const form = new FormData();
+  form.append('logo', logo);
+  const res = await fetch(`${BASE}/api/admin/rooms/${id}/logo`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: form,
+  });
+  return handle<{ room: Room }>(res);
+}
+
+export async function adminDeleteRoomLogo(id: string) {
+  const res = await fetch(`${BASE}/api/admin/rooms/${id}/logo`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return handle<{ room: Room }>(res);
+}
+
 export async function adminUpdateRoomStatus(id: string, status: string) {
   const res = await fetch(`${BASE}/api/admin/rooms/${id}/status`, {
     method: 'PATCH',

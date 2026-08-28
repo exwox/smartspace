@@ -35,6 +35,7 @@ export interface Room {
   size: { panjang: number; lebar: number; luas_m2: number };
   price: number;
   photos: string[];
+  rented_logo?: string | null;
   status: RoomStatus;
   current_tenant_id: string | null;
   current_lease_start: string | null;

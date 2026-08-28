@@ -71,12 +71,6 @@ export default function AdminLoginPage() {
           </button>
         </form>
 
-        <div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-          <p className="font-semibold text-slate-600">Akun demo:</p>
-          <p>username: <code className="font-mono">admin</code> · password: <code className="font-mono">admin123</code></p>
-          <p className="mt-1">(ubah via env <code className="font-mono">ADMIN_USERNAME</code> &amp; <code className="font-mono">ADMIN_PASSWORD</code>)</p>
-        </div>
-
         <Link to="/" className="mt-4 block text-center text-sm text-slate-500 hover:text-slate-700">
           ← Kembali ke peta publik
         </Link>

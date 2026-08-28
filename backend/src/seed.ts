@@ -63,6 +63,7 @@ export function seed() {
       size: { panjang: w, lebar: h, luas_m2: Math.round(w * h) },
       price,
       photos: [],
+      rented_logo: null,
       status,
       current_tenant_id: null,
       current_lease_start: null,
